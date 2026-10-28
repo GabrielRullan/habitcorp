@@ -938,7 +938,18 @@ export const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Projects Strip: Link Habits and Tasks under unified themes */}
+      {/* Pomodoro Timer (Milestone 3 & Pomodoro Suite) */}
+      {showPomodoro && (
+        <PomodoroTimer
+          onBlockOnAgenda={handleBlockFocusOnAgenda}
+          tasks={tasks}
+          onScoreTask={handleScoreTask}
+          isOpen={showPomodoro}
+          onToggleOpen={() => setShowPomodoro((v) => !v)}
+        />
+      )}
+
+      {/* Project Filter Strip (Positioned directly above the active view / after pomodoro) */}
       <section className="bg-white/80 border-b border-stone-200/70 px-4 py-2">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 overflow-x-auto">
           <div className="flex items-center gap-1.5 text-xs">
@@ -1002,17 +1013,6 @@ export const App: React.FC = () => {
         </div>
       </section>
 
-      {/* Pomodoro Timer (Milestone 3 & Pomodoro Suite) */}
-      {showPomodoro && (
-        <PomodoroTimer
-          onBlockOnAgenda={handleBlockFocusOnAgenda}
-          tasks={tasks}
-          onScoreTask={handleScoreTask}
-          isOpen={showPomodoro}
-          onToggleOpen={() => setShowPomodoro((v) => !v)}
-        />
-      )}
-
       {/* Main Content Area based on ViewMode */}
 
       {/* VIEW 1: HABITS + TASKS (2 balanced columns) */}
@@ -1033,6 +1033,8 @@ export const App: React.FC = () => {
               meetings={meetings}
               ghosts={ghosts}
               selectedDate={selectedDate}
+              selectedProjectId={selectedProjectId}
+              projects={projects}
               onSelectDate={setSelectedDate}
               onScoreTask={handleScoreTask}
               onEditTask={(task) => {
@@ -1065,6 +1067,8 @@ export const App: React.FC = () => {
             meetings={meetings}
             ghosts={ghosts}
             selectedDate={selectedDate}
+            selectedProjectId={selectedProjectId}
+            projects={projects}
             onSelectDate={setSelectedDate}
             onScoreTask={handleScoreTask}
             onEditTask={(task) => {

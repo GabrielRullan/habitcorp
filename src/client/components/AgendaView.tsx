@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Task, CalendarMeeting, Ghost } from '../types';
+import { Task, CalendarMeeting, Ghost, Project } from '../types';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -29,6 +29,8 @@ interface AgendaViewProps {
   meetings: CalendarMeeting[];
   ghosts?: Ghost[];
   selectedDate: string;
+  selectedProjectId?: string | 'all';
+  projects?: Project[];
   onSelectDate: (date: string) => void;
   onScoreTask: (taskId: string, direction?: 'up' | 'down') => void;
   onEditTask: (task: Task) => void;
@@ -48,6 +50,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   meetings,
   ghosts = [],
   selectedDate,
+  selectedProjectId = 'all',
+  projects = [],
   onSelectDate,
   onScoreTask,
   onEditTask,
@@ -116,6 +120,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   // Tasks and habits eligible for today's quick placement
   const tasksForSelectedDate = tasks.filter((t) => {
     if (t.scheduled_date) return false;
+    if (selectedProjectId && selectedProjectId !== 'all' && t.project_id !== selectedProjectId) return false;
     if (t.type === 'habit') return isSelectedToday;
     if (t.completed) return false;
     return (
@@ -126,6 +131,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
   // Filtered backlog for unscheduled drawer
   const filteredUnscheduledTasks = unscheduledTasks.filter((t) => {
+    if (selectedProjectId && selectedProjectId !== 'all' && t.project_id !== selectedProjectId) return false;
     if (drawerTab === 'habits' && t.type !== 'habit' && t.type !== 'daily') return false;
     if (drawerTab === 'tasks' && t.type !== 'todo') return false;
     if (drawerTimeFilter !== 'all' && t.time_of_day !== drawerTimeFilter) return false;
@@ -230,6 +236,37 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               year: 'numeric',
             })}
           </span>
+
+          {selectedProjectId && selectedProjectId !== 'all' && (() => {
+            const activeProject = projects.find((p) => p.id === selectedProjectId);
+            return (
+              <span
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-semibold border shadow-2xs ml-1"
+                style={
+                  activeProject
+                    ? {
+                        backgroundColor: `${activeProject.color}15`,
+                        borderColor: `${activeProject.color}40`,
+                        color: activeProject.color,
+                      }
+                    : {
+                        backgroundColor: '#eef2ff',
+                        borderColor: '#c7d2fe',
+                        color: '#4338ca',
+                      }
+                }
+                title="Only tasks in this project are highlighted; others are transparent."
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: activeProject?.color || '#6366f1' }}
+                />
+                <span className="truncate max-w-[130px]">
+                  {activeProject?.name || 'Project'} (others transparent)
+                </span>
+              </span>
+            );
+          })()}
         </div>
 
         {/* Right Actions: Ghost Visibility Toggle & Unscheduled Drawer */}
@@ -604,6 +641,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                           {currentHourTasks.map((t) => {
                             const isRoutine = t.type === 'habit' || t.type === 'daily';
                             const isDone = Boolean(t.completed);
+                            const isDimmed =
+                              selectedProjectId &&
+                              selectedProjectId !== 'all' &&
+                              t.project_id !== selectedProjectId;
 
                             return (
                               <div
@@ -614,7 +655,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                   e.dataTransfer.setData('text/plain', t.id);
                                   e.dataTransfer.effectAllowed = 'move';
                                 }}
-                                className={`mb-1 p-1.5 rounded-lg text-xs border transition cursor-pointer hover:shadow-xs active:cursor-grabbing ${getCardStyle(t, isDone)}`}
+                                className={`mb-1 p-1.5 rounded-lg text-xs border transition-all duration-200 cursor-pointer hover:shadow-xs active:cursor-grabbing ${getCardStyle(t, isDone)} ${
+                                  isDimmed
+                                    ? 'opacity-20 hover:opacity-90 grayscale-[35%] border-dashed shadow-none'
+                                    : 'opacity-100 ring-1 ring-transparent'
+                                }`}
                               >
                                 <div className="flex items-center justify-between gap-1">
                                   {/* Scoring / Action Button */}
