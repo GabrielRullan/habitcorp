@@ -794,6 +794,32 @@ export async function handleClientStorageRequest(
       saveClientDb(db);
       return newMeet;
     }
+    if (method === 'PATCH') {
+      const meetId = path.split('/')[4];
+      const meet = db.meetings.find((m) => m.id === meetId);
+      if (!meet) {
+        throw new Error('Meeting not found.');
+      }
+      if (body.title !== undefined) meet.title = body.title;
+      if (body.description !== undefined) meet.description = body.description;
+      if (body.location !== undefined) meet.location = body.location;
+      if (body.meeting_url !== undefined) meet.meeting_url = body.meeting_url;
+      if (body.start_time !== undefined) meet.start_time = body.start_time;
+      if (body.end_time !== undefined) meet.end_time = body.end_time;
+      if (body.all_day !== undefined) meet.all_day = body.all_day ? 1 : 0;
+      if (body.color !== undefined) meet.color = body.color;
+      if (body.is_ghost !== undefined) meet.is_ghost = body.is_ghost ? 1 : 0;
+      if (body.ghost_name !== undefined) meet.ghost_name = body.ghost_name;
+      if (body.ghost_id !== undefined) (meet as any).ghost_id = body.ghost_id;
+      saveClientDb(db);
+      return meet;
+    }
+    if (method === 'DELETE') {
+      const meetId = path.split('/')[4];
+      db.meetings = db.meetings.filter((m) => m.id !== meetId);
+      saveClientDb(db);
+      return { success: true };
+    }
   }
 
   // 10. /api/v1/ghosts

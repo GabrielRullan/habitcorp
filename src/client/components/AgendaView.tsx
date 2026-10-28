@@ -20,6 +20,8 @@ import {
   Sprout,
   CheckSquare,
   Zap,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 interface AgendaViewProps {
@@ -34,6 +36,9 @@ interface AgendaViewProps {
   onOpenNewTaskModal: (date: string, start: string) => void;
   onOpenNewMeetingModal: (date: string, start: string) => void;
   onUnscheduleTask: (taskId: string) => void;
+  onEditMeeting?: (meeting: CalendarMeeting) => void;
+  onDeleteMeeting?: (meetingId: string) => void;
+  onRescheduleMeeting?: (meetingId: string, date: string, startHour: number) => void;
 }
 
 const HOURS = Array.from({ length: 17 }, (_, i) => i + 6); // 06:00 to 22:00
@@ -50,6 +55,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   onOpenNewTaskModal,
   onOpenNewMeetingModal,
   onUnscheduleTask,
+  onEditMeeting,
+  onDeleteMeeting,
+  onRescheduleMeeting,
 }) => {
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
   const [showUnscheduledDrawer, setShowUnscheduledDrawer] = useState(false);
@@ -263,6 +271,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           </div>
 
           <button
+            onClick={() => onOpenNewMeetingModal(selectedDate, '10:00')}
+            className="px-2.5 py-1 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 text-xs font-medium flex items-center gap-1.5 transition shadow-2xs hover:text-indigo-600"
+            title="Create new calendar event or meeting"
+          >
+            <Plus className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Event</span>
+          </button>
+
+          <button
             onClick={() => setShowUnscheduledDrawer(!showUnscheduledDrawer)}
             className={`px-2.5 py-1 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition ${
               showUnscheduledDrawer
@@ -415,6 +432,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                           }}
                           onDrop={(e) => {
                             e.preventDefault();
+                            const meetingId = e.dataTransfer.getData('text/meeting-id');
+                            if (meetingId && onRescheduleMeeting) {
+                              onRescheduleMeeting(meetingId, dateStr, hour);
+                              return;
+                            }
                             const taskId = e.dataTransfer.getData('text/plain');
                             if (taskId) {
                               const droppedTask = tasks.find((t) => t.id === taskId);
@@ -449,17 +471,49 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                               return (
                                 <div
                                   key={m.id}
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData('text/meeting-id', m.id);
+                                    e.dataTransfer.effectAllowed = 'move';
+                                  }}
+                                  onClick={() => onEditMeeting && onEditMeeting(m)}
                                   style={{ borderColor: m.color || '#f472b6' }}
-                                  className="mb-1 p-1.5 rounded-lg text-xs border border-dashed bg-pink-50/80 text-pink-950 shadow-2xs relative overflow-hidden"
+                                  className="mb-1 p-1.5 rounded-lg text-xs border border-dashed bg-pink-50/80 text-pink-950 shadow-2xs relative overflow-hidden cursor-pointer hover:border-pink-500 hover:shadow-xs transition group/event"
                                 >
                                   <div className="flex items-center justify-between font-medium text-pink-900">
                                     <span className="truncate flex items-center gap-1">
                                       <span title="External Ghost Calendar">👻</span>
-                                      <span className="truncate">{m.title}</span>
+                                      <span className="truncate hover:underline">{m.title}</span>
                                     </span>
-                                    <span className="text-[9px] font-mono text-pink-600 shrink-0 ml-1">
-                                      {startTime}–{endTime}
-                                    </span>
+                                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                                      <span className="text-[9px] font-mono text-pink-600">
+                                        {startTime}–{endTime}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onEditMeeting && onEditMeeting(m);
+                                        }}
+                                        title="Edit event"
+                                        className="opacity-0 group-hover/event:opacity-100 p-0.5 text-pink-400 hover:text-pink-700 rounded transition"
+                                      >
+                                        <Pencil className="w-2.5 h-2.5" />
+                                      </button>
+                                      {onDeleteMeeting && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onDeleteMeeting(m.id);
+                                          }}
+                                          title="Delete event"
+                                          className="opacity-0 group-hover/event:opacity-100 p-0.5 text-pink-400 hover:text-rose-600 rounded transition"
+                                        >
+                                          <Trash2 className="w-2.5 h-2.5" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                   <div className="flex items-center gap-1 text-[9px] text-pink-800/80 mt-0.5">
                                     <span className="px-1 py-0.2 rounded font-medium bg-pink-100 text-pink-700 border border-pink-200">
@@ -480,13 +534,45 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             return (
                               <div
                                 key={m.id}
-                                className="mb-1 p-1.5 rounded-lg text-xs border border-indigo-200 bg-indigo-50/80 text-indigo-950 shadow-2xs"
+                                draggable={true}
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('text/meeting-id', m.id);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                }}
+                                onClick={() => onEditMeeting && onEditMeeting(m)}
+                                className="mb-1 p-1.5 rounded-lg text-xs border border-indigo-200 bg-indigo-50/80 text-indigo-950 shadow-2xs cursor-pointer hover:border-indigo-400 hover:shadow-xs transition group/event"
                               >
                                 <div className="flex items-center justify-between font-medium text-indigo-950">
-                                  <span className="truncate">{m.title}</span>
-                                  <span className="text-[9px] font-mono text-indigo-600 shrink-0 ml-1">
-                                    {startTime}–{endTime}
-                                  </span>
+                                  <span className="truncate hover:underline">{m.title}</span>
+                                  <div className="flex items-center gap-1 shrink-0 ml-1">
+                                    <span className="text-[9px] font-mono text-indigo-600">
+                                      {startTime}–{endTime}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onEditMeeting && onEditMeeting(m);
+                                      }}
+                                      title="Edit event"
+                                      className="opacity-0 group-hover/event:opacity-100 p-0.5 text-stone-400 hover:text-indigo-600 rounded transition"
+                                    >
+                                      <Pencil className="w-2.5 h-2.5" />
+                                    </button>
+                                    {onDeleteMeeting && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onDeleteMeeting(m.id);
+                                        }}
+                                        title="Delete event"
+                                        className="opacity-0 group-hover/event:opacity-100 p-0.5 text-stone-400 hover:text-rose-600 rounded transition"
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                                 {(m.location || m.meeting_url) && (
                                   <div className="flex items-center gap-1.5 text-[9px] text-stone-500 mt-0.5">
@@ -501,6 +587,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                         href={m.meeting_url}
                                         target="_blank"
                                         rel="noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
                                         className="text-indigo-600 hover:underline flex items-center gap-0.5 ml-auto shrink-0"
                                       >
                                         <ExternalLink className="w-2 h-2" />
@@ -522,11 +609,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                               <div
                                 key={t.id}
                                 draggable={true}
+                                onClick={() => onEditTask(t)}
                                 onDragStart={(e) => {
                                   e.dataTransfer.setData('text/plain', t.id);
                                   e.dataTransfer.effectAllowed = 'move';
                                 }}
-                                className={`mb-1 p-1.5 rounded-lg text-xs border transition cursor-grab active:cursor-grabbing ${getCardStyle(t, isDone)}`}
+                                className={`mb-1 p-1.5 rounded-lg text-xs border transition cursor-pointer hover:shadow-xs active:cursor-grabbing ${getCardStyle(t, isDone)}`}
                               >
                                 <div className="flex items-center justify-between gap-1">
                                   {/* Scoring / Action Button */}
@@ -545,7 +633,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={() => onScoreTask(t.id, 'up')}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onScoreTask(t.id, 'up');
+                                      }}
                                       className="text-stone-400 hover:text-indigo-600 shrink-0"
                                       title={isDone ? 'Mark uncompleted' : 'Mark completed'}
                                     >
@@ -559,8 +650,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
                                   {/* Title */}
                                   <span
-                                    onClick={() => onEditTask(t)}
-                                    className="font-medium truncate flex-1 cursor-pointer hover:underline text-[11px]"
+                                    className="font-medium truncate flex-1 hover:underline text-[11px]"
                                   >
                                     {t.title}
                                   </span>
@@ -587,7 +677,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                   {/* Unschedule */}
                                   <button
                                     type="button"
-                                    onClick={() => onUnscheduleTask(t.id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onUnscheduleTask(t.id);
+                                    }}
                                     className="text-stone-400 hover:text-rose-600 p-0.5 rounded shrink-0"
                                     title="Unschedule"
                                   >

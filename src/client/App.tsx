@@ -41,6 +41,7 @@ import {
 import { TaskModal } from './components/TaskModal';
 import { AgendaView } from './components/AgendaView';
 import { CalendarModal } from './components/CalendarModal';
+import { MeetingModal } from './components/MeetingModal';
 import { AgentApiModal } from './components/AgentApiModal';
 import { AuthModal } from './components/AuthModal';
 import { HabitCorpIcon } from './components/HabitCorpIcon';
@@ -93,6 +94,10 @@ export const App: React.FC = () => {
   const [modalDueDate, setModalDueDate] = useState<string | undefined>();
 
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
+  const [meetingModalOpen, setMeetingModalOpen] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<CalendarMeeting | null>(null);
+  const [modalMeetingDate, setModalMeetingDate] = useState<string | undefined>();
+  const [modalMeetingStart, setModalMeetingStart] = useState<string | undefined>();
   const [agentModalOpen, setAgentModalOpen] = useState(false);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -279,6 +284,98 @@ export const App: React.FC = () => {
       await Promise.all([fetchProjects(), fetchTasks()]);
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // Calendar Event & Meeting Handlers
+  const handleOpenNewMeeting = (date?: string, start?: string) => {
+    setEditingMeeting(null);
+    setModalMeetingDate(date || selectedDate);
+    setModalMeetingStart(start || '10:00');
+    setMeetingModalOpen(true);
+  };
+
+  const handleEditMeeting = (meeting: CalendarMeeting) => {
+    setEditingMeeting(meeting);
+    if (meeting.start_time) {
+      setModalMeetingDate(meeting.start_time.slice(0, 10));
+      setModalMeetingStart(meeting.start_time.slice(11, 16));
+    } else {
+      setModalMeetingDate(selectedDate);
+      setModalMeetingStart('10:00');
+    }
+    setMeetingModalOpen(true);
+  };
+
+  const handleSaveMeeting = async (meetingData: any) => {
+    if (!auth) return;
+    try {
+      if (meetingData.id) {
+        await fetchJson(`/api/v1/meetings/${meetingData.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': auth.apiKey,
+          },
+          body: JSON.stringify(meetingData),
+        });
+      } else {
+        await fetchJson('/api/v1/meetings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': auth.apiKey,
+          },
+          body: JSON.stringify(meetingData),
+        });
+      }
+      await fetchMeetings();
+    } catch (err) {
+      console.error('Failed to save meeting:', err);
+    }
+  };
+
+  const handleDeleteMeeting = async (meetingId: string) => {
+    if (!auth) return;
+    try {
+      await fetchJson(`/api/v1/meetings/${meetingId}`, {
+        method: 'DELETE',
+        headers: {
+          'X-API-Key': auth.apiKey,
+        },
+      });
+      await fetchMeetings();
+    } catch (err) {
+      console.error('Failed to delete meeting:', err);
+    }
+  };
+
+  const handleRescheduleMeeting = async (meetingId: string, date: string, startHour: number) => {
+    if (!auth) return;
+    const meeting = meetings.find((m) => m.id === meetingId);
+    if (!meeting) return;
+    try {
+      const origStart = new Date(meeting.start_time);
+      const origEnd = new Date(meeting.end_time);
+      const durationMs = Math.max(15 * 60 * 1000, origEnd.getTime() - origStart.getTime());
+
+      const newStart = new Date(`${date}T${String(startHour).padStart(2, '0')}:00:00.000Z`);
+      const newEnd = new Date(newStart.getTime() + durationMs);
+
+      await fetchJson(`/api/v1/meetings/${meetingId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': auth.apiKey,
+        },
+        body: JSON.stringify({
+          start_time: newStart.toISOString(),
+          end_time: newEnd.toISOString(),
+        }),
+      });
+      await fetchMeetings();
+    } catch (err) {
+      console.error('Failed to reschedule meeting:', err);
     }
   };
 
@@ -1112,10 +1209,10 @@ export const App: React.FC = () => {
                 setModalScheduledStart(start);
                 setTaskModalOpen(true);
               }}
-              onOpenNewMeetingModal={(date, start) => {
-                setSelectedDate(date);
-                setCalendarModalOpen(true);
-              }}
+              onOpenNewMeetingModal={handleOpenNewMeeting}
+              onEditMeeting={handleEditMeeting}
+              onDeleteMeeting={handleDeleteMeeting}
+              onRescheduleMeeting={handleRescheduleMeeting}
               onUnscheduleTask={handleUnscheduleTask}
             />
           </div>
@@ -1144,10 +1241,10 @@ export const App: React.FC = () => {
               setModalScheduledStart(start);
               setTaskModalOpen(true);
             }}
-            onOpenNewMeetingModal={(date, start) => {
-              setSelectedDate(date);
-              setCalendarModalOpen(true);
-            }}
+            onOpenNewMeetingModal={handleOpenNewMeeting}
+            onEditMeeting={handleEditMeeting}
+            onDeleteMeeting={handleDeleteMeeting}
+            onRescheduleMeeting={handleRescheduleMeeting}
             onUnscheduleTask={handleUnscheduleTask}
           />
         </main>
@@ -1174,6 +1271,17 @@ export const App: React.FC = () => {
         apiKey={auth?.apiKey || ''}
         onRefreshMeetings={fetchMeetings}
         defaultDate={selectedDate}
+      />
+
+      <MeetingModal
+        isOpen={meetingModalOpen}
+        onClose={() => setMeetingModalOpen(false)}
+        onSave={handleSaveMeeting}
+        onDelete={handleDeleteMeeting}
+        initialMeeting={editingMeeting}
+        defaultDate={modalMeetingDate || selectedDate}
+        defaultStartTime={modalMeetingStart || '10:00'}
+        ghosts={ghosts}
       />
 
       <AgentApiModal

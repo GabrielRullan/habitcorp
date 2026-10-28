@@ -1029,7 +1029,7 @@ apiRouter.delete('/meetings/:id', (req, res) => {
     res.status(404).json({ error: 'Meeting not found.' });
     return;
   }
-  res.json({ message: 'Meeting deleted.' });
+  res.json({ success: true, message: 'Meeting deleted.' });
 });
 
 // Calendar Feeds (ICS) Management

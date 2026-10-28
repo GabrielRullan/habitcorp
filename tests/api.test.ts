@@ -224,6 +224,53 @@ describe('Cadence API Suite', () => {
     expect(agendaRes.body.scheduled_tasks[0].scheduled_duration).toBe(90);
   });
 
+  it('updates (edits) and deletes calendar events on the agenda', async () => {
+    // 1. Create event
+    const createRes = await request(app)
+      .post('/api/v1/meetings')
+      .set('X-API-Key', userA.apiKey)
+      .send({
+        title: 'Weekly Standup',
+        start_time: '2026-10-28T09:00:00.000Z',
+        end_time: '2026-10-28T09:30:00.000Z',
+        location: 'Room A',
+      });
+    expect(createRes.status).toBe(201);
+    const meetingId = createRes.body.id;
+
+    // 2. Edit event (PATCH)
+    const patchRes = await request(app)
+      .patch(`/api/v1/meetings/${meetingId}`)
+      .set('X-API-Key', userA.apiKey)
+      .send({
+        title: 'Weekly Standup (Rescheduled & Updated)',
+        location: 'Zoom Room 1',
+        start_time: '2026-10-28T11:00:00.000Z',
+        end_time: '2026-10-28T11:45:00.000Z',
+        description: 'Review architecture RFC',
+      });
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.title).toBe('Weekly Standup (Rescheduled & Updated)');
+    expect(patchRes.body.location).toBe('Zoom Room 1');
+    expect(patchRes.body.start_time).toBe('2026-10-28T11:00:00.000Z');
+    expect(patchRes.body.end_time).toBe('2026-10-28T11:45:00.000Z');
+    expect(patchRes.body.description).toBe('Review architecture RFC');
+
+    // 3. Delete event (DELETE)
+    const deleteRes = await request(app)
+      .delete(`/api/v1/meetings/${meetingId}`)
+      .set('X-API-Key', userA.apiKey);
+    expect(deleteRes.status).toBe(200);
+    expect(deleteRes.body.success).toBe(true);
+
+    // 4. Verify gone from agenda
+    const verifyRes = await request(app)
+      .get('/api/v1/agenda?start=2026-10-28&end=2026-10-28')
+      .set('X-API-Key', userA.apiKey);
+    const found = verifyRes.body.meetings.find((m: any) => m.id === meetingId);
+    expect(found).toBeUndefined();
+  });
+
   it('manages ghosts (family/spouse external calendars) and agenda visibility', async () => {
     // 1. Create a Ghost for user A (e.g. Spouse)
     const ghostRes = await request(app)
