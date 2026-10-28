@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { seedGabrielRoutines } from './seedRoutines.js';
 
 let dbInstance: DatabaseSync | null = null;
@@ -221,11 +222,27 @@ export function initSchema(db: DatabaseSync) {
       `).run('user_test_default', 'testuser', 'test_password_hash', 'tk_test_developer_key', new Date().toISOString());
     }
 
-    // Seed Gabriel's routines and projects for testuser if not in test environment
+    // Seed routines and projects for testuser if not in test environment
     if (process.env.NODE_ENV !== 'test') {
-      const existingGabriel = db.prepare('SELECT id FROM projects WHERE user_id = ? AND id = ?').get('user_test_default', 'proj_chinese');
-      if (!existingGabriel) {
+      const existingGabrielProj = db.prepare('SELECT id FROM projects WHERE user_id = ? AND id = ?').get('user_test_default', 'proj_chinese');
+      if (!existingGabrielProj) {
         seedGabrielRoutines(db, 'user_test_default');
+      }
+
+      // Ensure account for gabriel@rullan.cat with requested 3-animal password
+      const existingUser = db.prepare('SELECT id FROM users WHERE email = ? OR username = ?').get('gabriel@rullan.cat', 'gabriel') as any;
+      const animalPassword = 'falcon.badger.otter';
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = `${salt}:${crypto.scryptSync(animalPassword, salt, 64).toString('hex')}`;
+      if (!existingUser) {
+        db.prepare(`
+          INSERT INTO users (id, username, email, password_hash, api_key, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run('user_gabriel', 'gabriel', 'gabriel@rullan.cat', hash, 'tk_gabriel_rullan_key', new Date().toISOString());
+
+        seedGabrielRoutines(db, 'user_gabriel');
+      } else {
+        db.prepare('UPDATE users SET password_hash = ?, email = ? WHERE id = ?').run(hash, 'gabriel@rullan.cat', existingUser.id);
       }
     }
   } catch (err) {

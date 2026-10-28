@@ -43,9 +43,10 @@ import { AgendaView } from './components/AgendaView';
 import { CalendarModal } from './components/CalendarModal';
 import { AgentApiModal } from './components/AgentApiModal';
 import { AuthModal } from './components/AuthModal';
-import { BananaIcon } from './components/BananaIcon';
+import { HabitCorpIcon } from './components/HabitCorpIcon';
 import { FocusPacingBar } from './components/FocusPacingBar';
 import { PomodoroTimer } from './components/PomodoroTimer';
+import { fetchJson } from './apiHelper';
 
 export const App: React.FC = () => {
   // Current user state (auto-logs into @testuser for frictionless local testing)
@@ -134,12 +135,11 @@ export const App: React.FC = () => {
 
     if (magicToken) {
       window.history.replaceState({}, '', window.location.pathname);
-      fetch('/api/v1/auth/verify-magic-link', {
+      fetchJson('/api/v1/auth/verify-magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: magicToken }),
       })
-        .then((r) => r.json())
         .then((data) => {
           if (data?.apiKey) {
             handleAuthSuccess(data);
@@ -164,12 +164,14 @@ export const App: React.FC = () => {
     } catch {}
 
     // 3. Fallback to default user for preview
-    fetch('/api/v1/auth/default-user')
-      .then((r) => r.json())
+    fetchJson('/api/v1/auth/default-user')
       .then((data) => {
         if (data?.apiKey) setAuth(data);
       })
-      .catch((e) => console.error(e));
+      .catch((e) => {
+        console.debug('Default user fetch unavailable:', e);
+        setAuthModalOpen(true);
+      });
   }, []);
 
   const fetchGhosts = async () => {
@@ -740,13 +742,13 @@ export const App: React.FC = () => {
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           {/* Brand */}
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-amber-100/90 border border-amber-300/80 flex items-center justify-center shadow-2xs">
-              <BananaIcon className="w-5 h-5" />
+            <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-200/90 flex items-center justify-center shadow-2xs">
+              <HabitCorpIcon className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-bold text-stone-900 tracking-tight">HabitCorp</h1>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-medium">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 font-medium">
                   The boring cousin of Habitica
                 </span>
               </div>

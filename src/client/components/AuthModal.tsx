@@ -18,6 +18,8 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { BananaIcon } from './BananaIcon';
+import { HabitCorpIcon } from './HabitCorpIcon';
+import { fetchJson } from '../apiHelper';
 
 interface AuthModalProps {
   onSuccess: (auth: AuthState) => void;
@@ -61,16 +63,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onClose, canClo
       const cleanEmail = emailInput.trim();
       if (!cleanEmail) throw new Error('Please enter an email or username');
 
-      const res = await fetch('/api/v1/auth/magic-link', {
+      const data = await fetchJson('/api/v1/auth/magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate magic login link');
-      }
 
       setMagicLinkResult({
         token: data.token,
@@ -94,16 +91,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onClose, canClo
     setLoading(true);
 
     try {
-      const res = await fetch('/api/v1/auth/verify-magic-link', {
+      const data = await fetchJson('/api/v1/auth/verify-magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Magic link verification failed');
-      }
 
       onSuccess({
         id: data.id,
@@ -126,16 +118,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onClose, canClo
 
     try {
       const endpoint = passwordMode === 'register' ? '/api/v1/auth/register' : '/api/v1/auth/login';
-      const res = await fetch(endpoint, {
+      const data = await fetchJson(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username.trim(), password }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Authentication failed');
-      }
 
       onSuccess({ id: data.id, username: data.username, apiKey: data.apiKey });
     } catch (err: any) {
@@ -217,8 +204,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onClose, canClo
 
         {/* Brand Header */}
         <div className="flex items-center gap-3 mb-5">
-          <div className="h-10 w-10 rounded-2xl bg-amber-100/90 border border-amber-300/80 flex items-center justify-center shadow-2xs">
-            <BananaIcon className="w-6 h-6" />
+          <div className="h-10 w-10 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shadow-2xs">
+            <HabitCorpIcon className="w-6 h-6" />
           </div>
           <div>
             <h2 className="text-xl font-bold text-stone-900 tracking-tight">HabitCorp</h2>

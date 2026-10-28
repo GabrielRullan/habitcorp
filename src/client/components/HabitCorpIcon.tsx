@@ -1,0 +1,61 @@
+import React from 'react';
+
+export const HabitCorpIcon: React.FC<{ className?: string }> = ({ className = 'w-6 h-6' }) => {
+  return (
+    <svg
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-label="HabitCorp Logo"
+    >
+      {/* Briefcase Handle */}
+      <path
+        d="M11 11V8C11 6.89543 11.8954 6 13 6H19C20.1046 6 21 6.89543 21 8V11"
+        stroke="#4f46e5"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+
+      {/* Briefcase Main Body */}
+      <rect
+        x="4"
+        y="11"
+        width="24"
+        height="16"
+        rx="3.5"
+        fill="#e0e7ff"
+        stroke="#4338ca"
+        strokeWidth="2"
+      />
+
+      {/* Center Latches */}
+      <rect x="9" y="14" width="3" height="3" rx="0.75" fill="#4338ca" />
+      <rect x="20" y="14" width="3" height="3" rx="0.75" fill="#4338ca" />
+
+      {/* Briefcase Center Dividing Seam */}
+      <line x1="4" y1="18" x2="28" y2="18" stroke="#6366f1" strokeWidth="1.5" />
+
+      {/* Little Habit Sprout growing from the top right */}
+      <path
+        d="M20 7C20 4.5 22.5 3 24.5 3C25 5 23.5 7 21 7.2"
+        fill="#10b981"
+        stroke="#059669"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M20 7C18.5 5.5 18 3.5 16 3.5C15.5 5 17 6.8 19.5 7.1"
+        fill="#34d399"
+        stroke="#059669"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="20" cy="7.2" r="1" fill="#047857" />
+    </svg>
+  );
+};
+
+export default HabitCorpIcon;
