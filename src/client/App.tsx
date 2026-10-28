@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Task,
   TaskType,
@@ -37,6 +37,8 @@ import {
   User,
   LogOut,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { TaskModal } from './components/TaskModal';
 import { AgendaView } from './components/AgendaView';
@@ -79,6 +81,7 @@ export const App: React.FC = () => {
 
   // Filters
   const [selectedProjectId, setSelectedProjectId] = useState<string | 'all'>('all');
+  const projectsScrollRef = useRef<HTMLDivElement>(null);
   const [difficultyFilter] = useState<DifficultyTier | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -957,14 +960,31 @@ export const App: React.FC = () => {
       )}
 
       {/* Project Filter Strip (Positioned directly above the active view / after pomodoro) */}
-      <section className="bg-white/80 border-b border-stone-200/70 px-4 py-2">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 overflow-x-auto">
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="font-semibold text-stone-400 uppercase tracking-wider text-[10px] flex items-center gap-1 mr-1 shrink-0">
-              <Folder className="w-3 h-3 text-stone-400" />
-              <span>{t.projectsLabel}</span>
-            </span>
+      <section className="bg-white/80 border-b border-stone-200/70 px-4 py-1.5">
+        <div className="max-w-7xl mx-auto flex items-center gap-1.5">
+          <div className="flex items-center gap-1 font-semibold text-stone-400 uppercase tracking-wider text-[10px] shrink-0 mr-1 select-none">
+            <Folder className="w-3.5 h-3.5 text-stone-400" />
+            <span>{t.projectsLabel}</span>
+          </div>
 
+          <button
+            type="button"
+            onClick={() => projectsScrollRef.current?.scrollBy({ left: -220, behavior: 'smooth' })}
+            className="p-1 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg shrink-0 transition"
+            title="Scroll projects left"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+
+          <div
+            ref={projectsScrollRef}
+            onWheel={(e) => {
+              if (e.deltaY !== 0) {
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+            className="flex-1 flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar scroll-smooth py-1"
+          >
             <button
               onClick={() => setSelectedProjectId('all')}
               className={`px-2.5 py-1 rounded-lg font-medium border text-xs transition shrink-0 ${
@@ -1017,6 +1037,15 @@ export const App: React.FC = () => {
               <span>{t.newProjectBtn}</span>
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => projectsScrollRef.current?.scrollBy({ left: 220, behavior: 'smooth' })}
+            className="p-1 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg shrink-0 transition"
+            title="Scroll projects right"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       </section>
 

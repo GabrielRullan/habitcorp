@@ -44,3 +44,12 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(168, 162, 158, 0.9);
 }
+
+/* Hide scrollbar for clean chip/strip navigation */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -23,7 +23,68 @@ import {
   Zap,
   Pencil,
   Trash2,
+  Repeat,
 } from 'lucide-react';
+
+const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function doesMeetingOccurOnDate(m: CalendarMeeting, dateStr: string): boolean {
+  const mDate = m.start_time.slice(0, 10);
+  if (mDate === dateStr) return true;
+
+  const recurrence = m.recurrence || 'none';
+  if (recurrence === 'none') return false;
+
+  const baseStart = (m.series_start_time || m.start_time || '').slice(0, 10);
+  if (!baseStart || dateStr < baseStart) return false;
+  if (m.repeat_until && dateStr > m.repeat_until.slice(0, 10)) return false;
+
+  const targetDate = new Date(`${dateStr}T12:00:00Z`);
+  const dayOfWeek = targetDate.getUTCDay();
+  const dayOfMonth = targetDate.getUTCDate();
+
+  const startDate = new Date(`${baseStart}T12:00:00Z`);
+  const startDayOfWeek = startDate.getUTCDay();
+  const startDayOfMonth = startDate.getUTCDate();
+
+  const repeatDays = Array.isArray(m.repeat_days) ? m.repeat_days : [];
+
+  switch (recurrence) {
+    case 'daily':
+      return true;
+    case 'weekdays':
+      return dayOfWeek >= 1 && dayOfWeek <= 5;
+    case 'weekly':
+    case 'custom_days':
+      return repeatDays.length > 0 ? repeatDays.includes(dayOfWeek) : dayOfWeek === startDayOfWeek;
+    case 'monthly':
+      return dayOfMonth === startDayOfMonth;
+    default:
+      return false;
+  }
+}
+
+function getRecurrenceLabel(m: CalendarMeeting): string | null {
+  const recurrence = m.recurrence || 'none';
+  if (recurrence === 'none') return null;
+  switch (recurrence) {
+    case 'daily':
+      return 'Daily';
+    case 'weekdays':
+      return 'Weekdays';
+    case 'weekly':
+      return 'Weekly';
+    case 'monthly':
+      return 'Monthly';
+    case 'custom_days': {
+      const days = Array.isArray(m.repeat_days) ? m.repeat_days : [];
+      if (days.length === 0) return 'Custom';
+      return days.map((d) => SHORT_DAYS[d] || '').filter(Boolean).join(', ');
+    }
+    default:
+      return null;
+  }
+}
 
 interface AgendaViewProps {
   tasks: Task[];
@@ -439,10 +500,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
                     {/* Columns for each active date */}
                     {activeDates.map((dateStr) => {
-                      // Filter meetings starting in this hour on this date
+                      // Filter meetings starting in this hour on this date (including periodical events)
+                      const seenMeetingIds = new Set<string>();
                       const currentHourMeetings = meetings.filter((m) => {
-                        const mDate = m.start_time.slice(0, 10);
-                        if (mDate !== dateStr) return false;
+                        if (!doesMeetingOccurOnDate(m, dateStr)) return false;
                         const mHour = new Date(m.start_time).getUTCHours();
                         if (mHour !== hour) return false;
 
@@ -456,6 +517,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             if (!gids.includes(selectedGhostId)) return false;
                           }
                         }
+
+                        if (seenMeetingIds.has(m.id)) return false;
+                        seenMeetingIds.add(m.id);
                         return true;
                       });
 
@@ -509,12 +573,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                           {currentHourMeetings.map((m) => {
                             const startTime = m.start_time.slice(11, 16);
                             const endTime = m.end_time.slice(11, 16);
+                            const recurrenceLabel = getRecurrenceLabel(m);
 
                             if (m.is_ghost) {
                               // Ghost Event (Pastel translucent styling with dashed border)
                               return (
                                 <div
-                                  key={m.id}
+                                  key={`${m.id}_${dateStr}`}
                                   draggable={true}
                                   onDragStart={(e) => {
                                     e.dataTransfer.setData('text/meeting-id', m.id);
@@ -530,6 +595,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                       <span className="truncate hover:underline">{m.title}</span>
                                     </span>
                                     <div className="flex items-center gap-1 shrink-0 ml-1">
+                                      {recurrenceLabel && (
+                                        <span
+                                          className="px-1 py-0.2 rounded text-[8px] font-semibold bg-pink-100/90 text-pink-800 border border-pink-200 flex items-center gap-0.5"
+                                          title={`Periodical event: ${recurrenceLabel}`}
+                                        >
+                                          <Repeat className="w-2 h-2" />
+                                          <span>{recurrenceLabel}</span>
+                                        </span>
+                                      )}
                                       <span className="text-[9px] font-mono text-pink-600">
                                         {startTime}–{endTime}
                                       </span>
@@ -610,7 +684,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             // User's own primary meeting
                             return (
                               <div
-                                key={m.id}
+                                key={`${m.id}_${dateStr}`}
                                 draggable={true}
                                 onDragStart={(e) => {
                                   e.dataTransfer.setData('text/meeting-id', m.id);
@@ -622,6 +696,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                 <div className="flex items-center justify-between font-medium text-indigo-950">
                                   <span className="truncate hover:underline">{m.title}</span>
                                   <div className="flex items-center gap-1 shrink-0 ml-1">
+                                    {recurrenceLabel && (
+                                      <span
+                                        className="px-1 py-0.2 rounded text-[8px] font-semibold bg-indigo-100/90 text-indigo-800 border border-indigo-200 flex items-center gap-0.5"
+                                        title={`Periodical event: ${recurrenceLabel}`}
+                                      >
+                                        <Repeat className="w-2 h-2" />
+                                        <span>{recurrenceLabel}</span>
+                                      </span>
+                                    )}
                                     <span className="text-[9px] font-mono text-indigo-600">
                                       {startTime}–{endTime}
                                     </span>

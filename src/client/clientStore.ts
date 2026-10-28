@@ -415,6 +415,7 @@ function getDefaultSeedData(): StoredData {
       {
         id: 'meet_school_run_today',
         user_id: 'user_gabriel',
+        source_id: null,
         title: 'School Run (🚗 Kids)',
         description: 'Drop off children at school (08:30–13:30 schedule).',
         location: 'School',
@@ -425,11 +426,15 @@ function getDefaultSeedData(): StoredData {
         color: '#a855f7',
         is_ghost: 0,
         ghost_name: '',
+        recurrence: 'weekdays',
+        repeat_days: [1, 2, 3, 4, 5],
+        repeat_until: null,
         created_at: now,
       },
       {
         id: 'meet_dog_walk_today',
         user_id: 'user_gabriel',
+        source_id: null,
         title: 'Walk Dogs (🏡 Pets)',
         description: 'Morning walk with dogs around the neighborhood.',
         location: '',
@@ -440,11 +445,15 @@ function getDefaultSeedData(): StoredData {
         color: '#10b981',
         is_ghost: 0,
         ghost_name: '',
+        recurrence: 'daily',
+        repeat_days: [0, 1, 2, 3, 4, 5, 6],
+        repeat_until: null,
         created_at: now,
       },
       {
         id: 'meet_corp_sync_today',
         user_id: 'user_gabriel',
+        source_id: null,
         title: 'Enterprise: Architecture Team Sync',
         description: 'Weekly team architecture review and cross-track delivery status.',
         location: 'Remote',
@@ -455,6 +464,9 @@ function getDefaultSeedData(): StoredData {
         color: '#0ea5e9',
         is_ghost: 0,
         ghost_name: '',
+        recurrence: 'weekly',
+        repeat_days: [],
+        repeat_until: null,
         created_at: now,
       },
       {
@@ -792,6 +804,7 @@ export async function handleClientStorageRequest(
       const newMeet: CalendarMeeting = {
         id: 'meet_' + Math.random().toString(36).slice(2, 9),
         user_id: 'user_gabriel',
+        source_id: null,
         title: body.title || 'Meeting',
         description: body.description || '',
         location: body.location || '',
@@ -804,6 +817,9 @@ export async function handleClientStorageRequest(
         ghost_id: rawGhostIds[0] || body.ghost_id || null,
         ghost_ids: rawGhostIds,
         ghost_name: ghostName,
+        recurrence: body.recurrence || 'none',
+        repeat_days: Array.isArray(body.repeat_days) ? body.repeat_days : [],
+        repeat_until: body.repeat_until || null,
         created_at: new Date().toISOString(),
       };
       db.meetings.push(newMeet);
@@ -824,6 +840,9 @@ export async function handleClientStorageRequest(
       if (body.end_time !== undefined) meet.end_time = body.end_time;
       if (body.all_day !== undefined) meet.all_day = body.all_day ? 1 : 0;
       if (body.color !== undefined) meet.color = body.color;
+      if (body.recurrence !== undefined) meet.recurrence = body.recurrence;
+      if (body.repeat_days !== undefined) meet.repeat_days = Array.isArray(body.repeat_days) ? body.repeat_days : [];
+      if (body.repeat_until !== undefined) meet.repeat_until = body.repeat_until || null;
       if (body.is_ghost !== undefined) meet.is_ghost = body.is_ghost ? 1 : 0;
       if (body.ghost_name !== undefined) meet.ghost_name = body.ghost_name;
       if (body.ghost_id !== undefined) (meet as any).ghost_id = body.ghost_id;

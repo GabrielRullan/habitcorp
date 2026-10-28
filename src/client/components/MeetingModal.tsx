@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarMeeting, Ghost } from '../types';
+import { CalendarMeeting, Ghost, EventRecurrence } from '../types';
 import { useTranslation } from '../i18n/I18nContext';
 import {
   X,
@@ -12,7 +12,18 @@ import {
   ExternalLink,
   Users,
   Check,
+  Repeat,
 } from 'lucide-react';
+
+const WEEKDAYS = [
+  { label: 'Su', value: 0 },
+  { label: 'Mo', value: 1 },
+  { label: 'Tu', value: 2 },
+  { label: 'We', value: 3 },
+  { label: 'Th', value: 4 },
+  { label: 'Fr', value: 5 },
+  { label: 'Sa', value: 6 },
+];
 
 interface MeetingModalProps {
   isOpen: boolean;
@@ -30,6 +41,9 @@ interface MeetingModalProps {
     is_ghost?: number;
     ghost_id?: string;
     ghost_ids?: string[];
+    recurrence?: EventRecurrence;
+    repeat_days?: number[];
+    repeat_until?: string | null;
   }) => Promise<void>;
   onDelete?: (meetingId: string) => Promise<void>;
   initialMeeting?: CalendarMeeting | null;
@@ -72,6 +86,11 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
   const [allDay, setAllDay] = useState(false);
   const [color, setColor] = useState('#6366f1');
 
+  // Periodicity / Recurrence state
+  const [recurrence, setRecurrence] = useState<EventRecurrence>('none');
+  const [repeatDays, setRepeatDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [repeatUntil, setRepeatUntil] = useState<string>('');
+
   // Ghost / Family state (Multiple ghosts support)
   const [isGhost, setIsGhost] = useState(false);
   const [selectedGhostIds, setSelectedGhostIds] = useState<string[]>([]);
@@ -88,7 +107,7 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
       setLocation(initialMeeting.location || '');
       setMeetingUrl(initialMeeting.meeting_url || '');
 
-      const sTime = initialMeeting.start_time || '';
+      const sTime = initialMeeting.series_start_time || initialMeeting.start_time || '';
       const eTime = initialMeeting.end_time || '';
 
       if (sTime.includes('T')) {
@@ -107,6 +126,13 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
 
       setAllDay(Boolean(initialMeeting.all_day));
       setColor(initialMeeting.color || (initialMeeting.is_ghost ? '#ec4899' : '#6366f1'));
+      setRecurrence(initialMeeting.recurrence || 'none');
+      setRepeatDays(
+        initialMeeting.repeat_days && initialMeeting.repeat_days.length > 0
+          ? initialMeeting.repeat_days
+          : [1, 2, 3, 4, 5]
+      );
+      setRepeatUntil(initialMeeting.repeat_until ? initialMeeting.repeat_until.slice(0, 10) : '');
       setIsGhost(Boolean(initialMeeting.is_ghost));
       const initialGids = (initialMeeting.ghost_ids && initialMeeting.ghost_ids.length > 0)
         ? initialMeeting.ghost_ids
@@ -128,6 +154,9 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
 
       setAllDay(false);
       setColor('#6366f1');
+      setRecurrence('none');
+      setRepeatDays([1, 2, 3, 4, 5]);
+      setRepeatUntil('');
       setIsGhost(false);
       setSelectedGhostIds([]);
     }
@@ -135,6 +164,16 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
   }, [initialMeeting, defaultDate, defaultStartTime, isOpen, ghosts]);
 
   if (!isOpen) return null;
+
+  const toggleWeekday = (day: number) => {
+    if (repeatDays.includes(day)) {
+      if (repeatDays.length > 1) {
+        setRepeatDays(repeatDays.filter((d) => d !== day));
+      }
+    } else {
+      setRepeatDays([...repeatDays, day].sort());
+    }
+  };
 
   // Quick duration helper
   const handleSetDuration = (durationMinutes: number) => {
@@ -154,6 +193,18 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
       const startIso = `${date}T${startTime}:00.000Z`;
       const endIso = `${date}T${endTime}:00.000Z`;
 
+      let resolvedRepeatDays: number[] = [];
+      if (recurrence === 'daily') {
+        resolvedRepeatDays = [0, 1, 2, 3, 4, 5, 6];
+      } else if (recurrence === 'weekdays') {
+        resolvedRepeatDays = [1, 2, 3, 4, 5];
+      } else if (recurrence === 'weekly') {
+        const dayOfWeek = new Date(`${date}T12:00:00Z`).getUTCDay();
+        resolvedRepeatDays = [dayOfWeek];
+      } else if (recurrence === 'custom_days') {
+        resolvedRepeatDays = repeatDays;
+      }
+
       await onSave({
         id: initialMeeting?.id,
         title: title.trim(),
@@ -167,6 +218,9 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
         is_ghost: (isGhost || selectedGhostIds.length > 0) ? 1 : 0,
         ghost_id: selectedGhostIds[0] || undefined,
         ghost_ids: selectedGhostIds,
+        recurrence,
+        repeat_days: resolvedRepeatDays,
+        repeat_until: recurrence !== 'none' && repeatUntil ? repeatUntil : null,
       });
       onClose();
     } catch (err) {
@@ -312,6 +366,99 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
             <label htmlFor="meeting-all-day" className="text-xs text-stone-600 font-medium cursor-pointer">
               {t.eventAllDayLabel}
             </label>
+          </div>
+
+          {/* Periodicity / Recurrence */}
+          <div className="p-3.5 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-indigo-950 flex items-center gap-1.5">
+                <Repeat className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Periodicity / Recurrence</span>
+              </label>
+              {recurrence !== 'none' && (
+                <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100/80 border border-indigo-200 px-2 py-0.5 rounded-full">
+                  Periodical Event
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-xs">
+              {[
+                { id: 'none' as EventRecurrence, label: 'One-time' },
+                { id: 'daily' as EventRecurrence, label: 'Every Day' },
+                { id: 'weekdays' as EventRecurrence, label: 'Weekdays (Mon–Fri)' },
+                { id: 'weekly' as EventRecurrence, label: 'Weekly' },
+                { id: 'custom_days' as EventRecurrence, label: 'Specific Days' },
+                { id: 'monthly' as EventRecurrence, label: 'Monthly' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setRecurrence(opt.id)}
+                  className={`py-1.5 px-2.5 rounded-lg border text-left font-medium transition text-[11px] ${
+                    recurrence === opt.id
+                      ? 'bg-white border-indigo-400 text-indigo-900 shadow-2xs font-semibold'
+                      : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {recurrence === 'custom_days' && (
+              <div className="pt-1">
+                <span className="block text-[10px] font-semibold text-stone-500 uppercase tracking-wider mb-1">
+                  Repeat on Days
+                </span>
+                <div className="flex gap-1">
+                  {WEEKDAYS.map((wd) => {
+                    const active = repeatDays.includes(wd.value);
+                    return (
+                      <button
+                        type="button"
+                        key={wd.value}
+                        onClick={() => toggleWeekday(wd.value)}
+                        className={`flex-1 py-1 rounded-md text-xs font-semibold border text-center transition ${
+                          active
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
+                            : 'bg-white border-stone-200 text-stone-500 hover:border-indigo-300'
+                        }`}
+                      >
+                        {wd.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {recurrence !== 'none' && (
+              <div className="pt-1 flex items-center justify-between gap-2 border-t border-indigo-100/80">
+                <label className="text-[11px] text-stone-600 font-medium">
+                  Repeat Until <span className="text-stone-400 font-normal">(optional)</span>:
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={repeatUntil}
+                    min={date}
+                    onChange={(e) => setRepeatUntil(e.target.value)}
+                    className="bg-white border border-stone-200 rounded-lg px-2.5 py-1 text-xs text-stone-800 focus:outline-none focus:border-indigo-400 font-mono"
+                  />
+                  {repeatUntil && (
+                    <button
+                      type="button"
+                      onClick={() => setRepeatUntil('')}
+                      className="text-[10px] text-stone-400 hover:text-stone-700 px-1.5 py-0.5 rounded hover:bg-stone-100"
+                      title="Clear end date (repeat indefinitely)"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Location & Video Link */}

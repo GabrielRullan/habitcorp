@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarSource, Ghost } from '../types';
-import { X, Calendar, RefreshCw, Trash2, Plus, Upload, Link2, CheckCircle2, UserCheck, Pencil, Check } from 'lucide-react';
+import { CalendarSource, Ghost, EventRecurrence } from '../types';
+import { X, Calendar, RefreshCw, Trash2, Plus, Upload, Link2, CheckCircle2, UserCheck, Pencil, Check, Repeat } from 'lucide-react';
 import { fetchJson } from '../apiHelper';
+
+const WEEKDAYS = [
+  { label: 'Su', value: 0 },
+  { label: 'Mo', value: 1 },
+  { label: 'Tu', value: 2 },
+  { label: 'We', value: 3 },
+  { label: 'Th', value: 4 },
+  { label: 'Fr', value: 5 },
+  { label: 'Sa', value: 6 },
+];
 
 interface CalendarModalProps {
   isOpen: boolean;
@@ -56,6 +66,9 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
   const [meetingEnd, setMeetingEnd] = useState('11:00');
   const [meetingLocation, setMeetingLocation] = useState('');
   const [meetingUrl, setMeetingUrl] = useState('');
+  const [meetingRecurrence, setMeetingRecurrence] = useState<EventRecurrence>('none');
+  const [meetingRepeatDays, setMeetingRepeatDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [meetingRepeatUntil, setMeetingRepeatUntil] = useState('');
   const [isGhostMeeting, setIsGhostMeeting] = useState(false);
   const [selectedGhostIdForMeeting, setSelectedGhostIdForMeeting] = useState<string>('');
 
@@ -307,6 +320,17 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
       const startDateTime = `${meetingDate}T${meetingStart}:00Z`;
       const endDateTime = `${meetingDate}T${meetingEnd}:00Z`;
 
+      let resolvedRepeatDays: number[] = [];
+      if (meetingRecurrence === 'daily') {
+        resolvedRepeatDays = [0, 1, 2, 3, 4, 5, 6];
+      } else if (meetingRecurrence === 'weekdays') {
+        resolvedRepeatDays = [1, 2, 3, 4, 5];
+      } else if (meetingRecurrence === 'weekly') {
+        resolvedRepeatDays = [new Date(`${meetingDate}T12:00:00Z`).getUTCDay()];
+      } else if (meetingRecurrence === 'custom_days') {
+        resolvedRepeatDays = meetingRepeatDays;
+      }
+
       await fetchJson('/api/v1/meetings', {
         method: 'POST',
         headers: {
@@ -321,12 +345,18 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
           meeting_url: meetingUrl.trim() || undefined,
           is_ghost: isGhostMeeting,
           ghost_id: isGhostMeeting ? selectedGhostIdForMeeting : undefined,
+          recurrence: meetingRecurrence,
+          repeat_days: resolvedRepeatDays,
+          repeat_until: meetingRecurrence !== 'none' && meetingRepeatUntil ? meetingRepeatUntil : null,
         }),
       });
 
       setMeetingTitle('');
       setMeetingLocation('');
       setMeetingUrl('');
+      setMeetingRecurrence('none');
+      setMeetingRepeatDays([1, 2, 3, 4, 5]);
+      setMeetingRepeatUntil('');
       setIsGhostMeeting(false);
       setSuccessMsg('Event added to agenda!');
       setTimeout(() => setSuccessMsg(null), 3000);
@@ -890,6 +920,78 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                     className="w-full bg-stone-50 border border-stone-200 rounded-xl px-2.5 py-1.5 text-xs text-stone-800 focus:outline-none focus:border-indigo-400 focus:bg-white"
                   />
                 </div>
+              </div>
+
+              {/* Periodicity / Recurrence in Manual Meeting Tab */}
+              <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-2">
+                <label className="block text-xs font-semibold text-indigo-950 flex items-center gap-1.5">
+                  <Repeat className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Periodicity / Recurrence</span>
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 text-xs">
+                  {[
+                    { id: 'none' as EventRecurrence, label: 'One-time' },
+                    { id: 'daily' as EventRecurrence, label: 'Every Day' },
+                    { id: 'weekdays' as EventRecurrence, label: 'Weekdays' },
+                    { id: 'weekly' as EventRecurrence, label: 'Weekly' },
+                    { id: 'custom_days' as EventRecurrence, label: 'Specific Days' },
+                    { id: 'monthly' as EventRecurrence, label: 'Monthly' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setMeetingRecurrence(opt.id)}
+                      className={`py-1.5 px-2 rounded-lg border text-left font-medium transition text-[11px] ${
+                        meetingRecurrence === opt.id
+                          ? 'bg-white border-indigo-400 text-indigo-900 shadow-2xs font-semibold'
+                          : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {meetingRecurrence === 'custom_days' && (
+                  <div className="flex gap-1 pt-1">
+                    {WEEKDAYS.map((wd) => {
+                      const active = meetingRepeatDays.includes(wd.value);
+                      return (
+                        <button
+                          type="button"
+                          key={wd.value}
+                          onClick={() => {
+                            if (active && meetingRepeatDays.length > 1) {
+                              setMeetingRepeatDays(meetingRepeatDays.filter((d) => d !== wd.value));
+                            } else if (!active) {
+                              setMeetingRepeatDays([...meetingRepeatDays, wd.value].sort());
+                            }
+                          }}
+                          className={`flex-1 py-1 rounded-md text-xs font-semibold border text-center transition ${
+                            active
+                              ? 'bg-indigo-600 border-indigo-600 text-white'
+                              : 'bg-white border-stone-200 text-stone-500 hover:border-indigo-300'
+                          }`}
+                        >
+                          {wd.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {meetingRecurrence !== 'none' && (
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-indigo-100/80">
+                    <span className="text-[11px] text-stone-600 font-medium">Repeat Until (optional):</span>
+                    <input
+                      type="date"
+                      value={meetingRepeatUntil}
+                      min={meetingDate}
+                      onChange={(e) => setMeetingRepeatUntil(e.target.value)}
+                      className="bg-white border border-stone-200 rounded-lg px-2 py-1 text-xs text-stone-800 font-mono"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">

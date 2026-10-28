@@ -865,6 +865,125 @@ apiRouter.delete('/subtasks/:id', (req, res) => {
 
 // --- AGENDA & CALENDAR ROUTES ---
 
+const VALID_RECURRENCES = ['none', 'daily', 'weekdays', 'weekly', 'custom_days', 'monthly'] as const;
+
+function formatMeetingRow(m: any) {
+  if (!m) return m;
+  let ghost_ids: string[] = [];
+  if (Array.isArray(m.ghost_ids)) {
+    ghost_ids = m.ghost_ids;
+  } else if (typeof m.ghost_ids === 'string') {
+    try {
+      ghost_ids = JSON.parse(m.ghost_ids || '[]');
+    } catch {
+      ghost_ids = [];
+    }
+  } else if (m.ghost_id) {
+    ghost_ids = [m.ghost_id];
+  }
+
+  let repeat_days: number[] = [];
+  if (Array.isArray(m.repeat_days)) {
+    repeat_days = m.repeat_days.map(Number);
+  } else if (typeof m.repeat_days === 'string') {
+    try {
+      repeat_days = JSON.parse(m.repeat_days || '[]').map(Number);
+    } catch {
+      repeat_days = [];
+    }
+  }
+
+  return {
+    ...m,
+    ghost_ids,
+    recurrence: m.recurrence || 'none',
+    repeat_days,
+    repeat_until: m.repeat_until || null,
+  };
+}
+
+function doesRecurringMeetingMatchDate(m: any, dateStr: string): boolean {
+  const recurrence = m.recurrence || 'none';
+  const baseStart = (m.series_start_time || m.start_time || '').slice(0, 10);
+  if (!baseStart) return false;
+  if (recurrence === 'none') {
+    return baseStart === dateStr;
+  }
+  if (dateStr < baseStart) return false;
+  if (m.repeat_until && dateStr > String(m.repeat_until).slice(0, 10)) return false;
+
+  const targetDate = new Date(`${dateStr}T12:00:00Z`);
+  const dayOfWeek = targetDate.getUTCDay();
+  const dayOfMonth = targetDate.getUTCDate();
+
+  const startDate = new Date(`${baseStart}T12:00:00Z`);
+  const startDayOfWeek = startDate.getUTCDay();
+  const startDayOfMonth = startDate.getUTCDate();
+
+  const repeatDays: number[] = Array.isArray(m.repeat_days) ? m.repeat_days : [];
+
+  switch (recurrence) {
+    case 'daily':
+      return true;
+    case 'weekdays':
+      return dayOfWeek >= 1 && dayOfWeek <= 5;
+    case 'weekly':
+      return repeatDays.length > 0 ? repeatDays.includes(dayOfWeek) : dayOfWeek === startDayOfWeek;
+    case 'custom_days':
+      return repeatDays.length > 0 ? repeatDays.includes(dayOfWeek) : dayOfWeek === startDayOfWeek;
+    case 'monthly':
+      return dayOfMonth === startDayOfMonth;
+    default:
+      return baseStart === dateStr;
+  }
+}
+
+function expandMeetingsForDateRange(rawRows: any[], startDateStr: string, endDateStr: string): any[] {
+  const formatted = rawRows.map(formatMeetingRow);
+  const startTimeIso = `${startDateStr}T00:00:00.000Z`;
+  const endTimeIso = `${endDateStr}T23:59:59.999Z`;
+
+  // Generate list of dates in [startDateStr, endDateStr]
+  const dates: string[] = [];
+  const cur = new Date(`${startDateStr}T12:00:00Z`);
+  const last = new Date(`${endDateStr}T12:00:00Z`);
+  let safety = 0;
+  while (cur <= last && safety < 366) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    safety++;
+  }
+
+  const expanded: any[] = [];
+  for (const m of formatted) {
+    if (!m.recurrence || m.recurrence === 'none') {
+      if (
+        (m.start_time >= startTimeIso && m.start_time <= endTimeIso) ||
+        (m.end_time >= startTimeIso && m.end_time <= endTimeIso) ||
+        (m.start_time <= startTimeIso && m.end_time >= endTimeIso)
+      ) {
+        expanded.push(m);
+      }
+    } else {
+      const startTimePart = m.start_time.includes('T') ? m.start_time.slice(11) : '09:00:00.000Z';
+      const endTimePart = m.end_time.includes('T') ? m.end_time.slice(11) : '10:00:00.000Z';
+      for (const d of dates) {
+        if (doesRecurringMeetingMatchDate(m, d)) {
+          expanded.push({
+            ...m,
+            series_start_time: m.start_time,
+            start_time: `${d}T${startTimePart}`,
+            end_time: `${d}T${endTimePart}`,
+          });
+        }
+      }
+    }
+  }
+
+  expanded.sort((a, b) => a.start_time.localeCompare(b.start_time));
+  return expanded;
+}
+
 apiRouter.get('/agenda', (req, res) => {
   const userId = req.user!.id;
   runUserRollover(userId);
@@ -873,39 +992,22 @@ apiRouter.get('/agenda', (req, res) => {
   const start = (req.query.start as string) || getTodayDateString();
   const end = (req.query.end as string) || start;
 
-  // 1. Fetch Calendar Meetings overlapping with the requested date range
+  // 1. Fetch Calendar Meetings (including periodical/recurring ones)
   const startTimeIso = `${start}T00:00:00.000Z`;
   const endTimeIso = `${end}T23:59:59.999Z`;
 
-  function formatMeeting(m: any) {
-    if (!m) return m;
-    let ghost_ids: string[] = [];
-    if (Array.isArray(m.ghost_ids)) {
-      ghost_ids = m.ghost_ids;
-    } else if (typeof m.ghost_ids === 'string') {
-      try {
-        ghost_ids = JSON.parse(m.ghost_ids || '[]');
-      } catch {
-        ghost_ids = [];
-      }
-    } else if (m.ghost_id) {
-      ghost_ids = [m.ghost_id];
-    }
-    return {
-      ...m,
-      ghost_ids,
-    };
-  }
-
-  const meetings = db.prepare(`
+  const rawMeetings = db.prepare(`
     SELECT * FROM calendar_events
     WHERE user_id = ? AND (
+      recurrence != 'none' OR
       (start_time >= ? AND start_time <= ?) OR
       (end_time >= ? AND end_time <= ?) OR
       (start_time <= ? AND end_time >= ?)
     )
     ORDER BY start_time ASC
-  `).all(userId, startTimeIso, endTimeIso, startTimeIso, endTimeIso, startTimeIso, endTimeIso);
+  `).all(userId, startTimeIso, endTimeIso, startTimeIso, endTimeIso, startTimeIso, endTimeIso) as any[];
+
+  const meetings = expandMeetingsForDateRange(rawMeetings, start, end);
 
   // 2. Fetch Time-Blocked Tasks scheduled in this date range
   const scheduledTasksRows = db.prepare(`
@@ -937,7 +1039,7 @@ apiRouter.get('/agenda', (req, res) => {
 
   res.json({
     date_range: { start, end },
-    meetings: (meetings as any[]).map(formatMeeting),
+    meetings,
     scheduled_tasks: scheduledTasks,
     ghosts,
   });
@@ -949,32 +1051,29 @@ apiRouter.get('/meetings', (req, res) => {
   const start = req.query.start as string;
   const end = req.query.end as string;
 
-  let query = 'SELECT * FROM calendar_events WHERE user_id = ?';
-  const params: any[] = [userId];
-
   if (start && end) {
-    query += ' AND start_time >= ? AND start_time <= ?';
-    params.push(`${start}T00:00:00.000Z`, `${end}T23:59:59.999Z`);
+    const startTimeIso = `${start}T00:00:00.000Z`;
+    const endTimeIso = `${end}T23:59:59.999Z`;
+    const rawMeetings = db.prepare(`
+      SELECT * FROM calendar_events
+      WHERE user_id = ? AND (
+        recurrence != 'none' OR
+        (start_time >= ? AND start_time <= ?) OR
+        (end_time >= ? AND end_time <= ?) OR
+        (start_time <= ? AND end_time >= ?)
+      )
+      ORDER BY start_time ASC
+    `).all(userId, startTimeIso, endTimeIso, startTimeIso, endTimeIso, startTimeIso, endTimeIso) as any[];
+
+    res.json({
+      meetings: expandMeetingsForDateRange(rawMeetings, start, end),
+    });
+    return;
   }
 
-  query += ' ORDER BY start_time ASC';
-  const meetings = db.prepare(query).all(...params) as any[];
+  const meetings = db.prepare('SELECT * FROM calendar_events WHERE user_id = ? ORDER BY start_time ASC').all(userId) as any[];
   res.json({
-    meetings: meetings.map((m) => {
-      let ghost_ids: string[] = [];
-      if (Array.isArray(m.ghost_ids)) {
-        ghost_ids = m.ghost_ids;
-      } else if (typeof m.ghost_ids === 'string') {
-        try {
-          ghost_ids = JSON.parse(m.ghost_ids || '[]');
-        } catch {
-          ghost_ids = [];
-        }
-      } else if (m.ghost_id) {
-        ghost_ids = [m.ghost_id];
-      }
-      return { ...m, ghost_ids };
-    }),
+    meetings: meetings.map(formatMeetingRow),
   });
 });
 
@@ -987,6 +1086,20 @@ apiRouter.post('/meetings', (req, res) => {
     res.status(400).json({ error: 'title, start_time, and end_time are required.' });
     return;
   }
+
+  const recurrence = VALID_RECURRENCES.includes(b.recurrence) ? b.recurrence : 'none';
+  let repeatDays: number[] = [];
+  if (Array.isArray(b.repeat_days)) {
+    repeatDays = b.repeat_days.map(Number).filter((d: number) => d >= 0 && d <= 6);
+  } else if (recurrence === 'daily') {
+    repeatDays = [0, 1, 2, 3, 4, 5, 6];
+  } else if (recurrence === 'weekdays') {
+    repeatDays = [1, 2, 3, 4, 5];
+  } else if (recurrence === 'weekly') {
+    const startDay = new Date(b.start_time).getUTCDay();
+    if (!Number.isNaN(startDay)) repeatDays = [startDay];
+  }
+  const repeatUntil = b.repeat_until ? String(b.repeat_until).slice(0, 10) : null;
 
   const meetingId = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -1008,8 +1121,8 @@ apiRouter.post('/meetings', (req, res) => {
   db.prepare(`
     INSERT INTO calendar_events (
       id, user_id, source_id, ghost_id, ghost_ids, is_ghost, ghost_name, external_uid, title, description, location,
-      meeting_url, start_time, end_time, all_day, color, created_at
-    ) VALUES (?, ?, null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      meeting_url, start_time, end_time, all_day, color, recurrence, repeat_days, repeat_until, created_at
+    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     meetingId,
     userId,
@@ -1026,21 +1139,20 @@ apiRouter.post('/meetings', (req, res) => {
     b.end_time,
     b.all_day ? 1 : 0,
     b.color || (isGhost ? '#ec4899' : '#6366f1'),
+    recurrence,
+    JSON.stringify(repeatDays),
+    repeatUntil,
     now
   );
 
   const created = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(meetingId) as any;
-  let parsedGhostIds: string[] = [];
-  try {
-    parsedGhostIds = JSON.parse(created.ghost_ids || '[]');
-  } catch {}
-  res.status(201).json({ ...created, ghost_ids: parsedGhostIds });
+  res.status(201).json(formatMeetingRow(created));
 });
 
 apiRouter.patch('/meetings/:id', (req, res) => {
   const userId = req.user!.id;
   const db = getDb();
-  const current = db.prepare('SELECT * FROM calendar_events WHERE id = ? AND user_id = ?').get(req.params.id, userId);
+  const current = db.prepare('SELECT * FROM calendar_events WHERE id = ? AND user_id = ?').get(req.params.id, userId) as any;
   if (!current) {
     res.status(404).json({ error: 'Meeting not found.' });
     return;
@@ -1060,6 +1172,36 @@ apiRouter.patch('/meetings/:id', (req, res) => {
   if (b.all_day !== undefined) {
     updates.push('all_day = ?');
     values.push(b.all_day ? 1 : 0);
+  }
+
+  if (b.recurrence !== undefined && VALID_RECURRENCES.includes(b.recurrence)) {
+    updates.push('recurrence = ?');
+    values.push(b.recurrence);
+    if (b.repeat_days === undefined) {
+      if (b.recurrence === 'daily') {
+        updates.push('repeat_days = ?');
+        values.push(JSON.stringify([0, 1, 2, 3, 4, 5, 6]));
+      } else if (b.recurrence === 'weekdays') {
+        updates.push('repeat_days = ?');
+        values.push(JSON.stringify([1, 2, 3, 4, 5]));
+      } else if (b.recurrence === 'none') {
+        updates.push('repeat_days = ?');
+        values.push('[]');
+      }
+    }
+  }
+
+  if (b.repeat_days !== undefined) {
+    const cleanDays = Array.isArray(b.repeat_days)
+      ? b.repeat_days.map(Number).filter((d: number) => d >= 0 && d <= 6)
+      : [];
+    updates.push('repeat_days = ?');
+    values.push(JSON.stringify(cleanDays));
+  }
+
+  if (b.repeat_until !== undefined) {
+    updates.push('repeat_until = ?');
+    values.push(b.repeat_until ? String(b.repeat_until).slice(0, 10) : null);
   }
 
   if (b.ghost_ids !== undefined) {
@@ -1107,11 +1249,7 @@ apiRouter.patch('/meetings/:id', (req, res) => {
   }
 
   const updated = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id) as any;
-  let parsedGhostIds: string[] = [];
-  try {
-    parsedGhostIds = JSON.parse(updated.ghost_ids || '[]');
-  } catch {}
-  res.json({ ...updated, ghost_ids: parsedGhostIds });
+  res.json(formatMeetingRow(updated));
 });
 
 apiRouter.delete('/meetings/:id', (req, res) => {

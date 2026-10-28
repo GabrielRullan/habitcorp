@@ -405,10 +405,10 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
   const insertEvent = db.prepare(`
     INSERT INTO calendar_events (
       id, user_id, source_id, ghost_id, is_ghost, ghost_name,
-      title, description, location, meeting_url, start_time, end_time, all_day, color, created_at
+      title, description, location, meeting_url, start_time, end_time, all_day, color, recurrence, repeat_days, created_at
     ) VALUES (
       ?, ?, NULL, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, 0, ?, ?
+      ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?
     )
   `);
 
@@ -425,6 +425,8 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     location?: string;
     meetingUrl?: string;
     description?: string;
+    recurrence?: string;
+    repeatDays?: number[];
   }) => {
     insertEvent.run(
       data.id,
@@ -439,6 +441,8 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
       data.start,
       data.end,
       data.color || (data.isGhost ? '#ec4899' : '#0ea5e9'),
+      data.recurrence || 'none',
+      JSON.stringify(data.repeatDays || []),
       now
     );
   };
@@ -452,6 +456,8 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     color: '#a855f7',
     location: 'School',
     description: 'Drop off children at school (08:30–13:30 schedule).',
+    recurrence: 'weekdays',
+    repeatDays: [1, 2, 3, 4, 5],
   });
 
   addMeeting({
@@ -461,6 +467,8 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     end: `${today}T08:55:00.000Z`,
     color: '#10b981',
     description: 'Morning walk with dogs around the neighborhood.',
+    recurrence: 'daily',
+    repeatDays: [0, 1, 2, 3, 4, 5, 6],
   });
 
   addMeeting({
@@ -472,6 +480,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     location: 'Remote',
     meetingUrl: 'https://meet.example.com/team-sync',
     description: 'Weekly team architecture review and cross-track delivery status.',
+    recurrence: 'weekly',
   });
 
   // --- GHOST EVENTS (Family Commitments) ---
