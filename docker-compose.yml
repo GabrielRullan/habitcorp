@@ -1,0 +1,12 @@
+services:
+  cadence:
+    build: .
+    container_name: cadence
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=3456
+      - NODE_ENV=production

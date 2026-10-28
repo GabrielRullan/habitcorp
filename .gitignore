@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Production build artifacts
+dist/
+build/
+coverage/
+
+# Local database and WAL journal files
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Environment variables & secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Firebase & Cloud deployment cache & logs
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Antigravity agent temp artifacts
+.system_generated/
+.agents/
