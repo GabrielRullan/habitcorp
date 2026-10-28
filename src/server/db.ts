@@ -242,7 +242,16 @@ export function initSchema(db: DatabaseSync) {
 
         seedGabrielRoutines(db, 'user_gabriel');
       } else {
-        db.prepare('UPDATE users SET password_hash = ?, email = ? WHERE id = ?').run(hash, 'gabriel@rullan.cat', existingUser.id);
+        db.prepare('UPDATE users SET password_hash = ?, email = ?, api_key = ? WHERE id = ?').run(
+          hash,
+          'gabriel@rullan.cat',
+          'tk_gabriel_rullan_key',
+          existingUser.id
+        );
+        const hasProjects = db.prepare('SELECT id FROM projects WHERE user_id = ? LIMIT 1').get(existingUser.id);
+        if (!hasProjects) {
+          seedGabrielRoutines(db, existingUser.id);
+        }
       }
     }
   } catch (err) {

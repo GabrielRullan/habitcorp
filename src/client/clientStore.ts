@@ -469,6 +469,7 @@ function getDefaultSeedData(): StoredData {
         all_day: 0,
         color: '#ec4899',
         is_ghost: 1,
+        ghost_id: 'ghost_alex',
         ghost_name: 'Alex (Partner)',
         created_at: now,
       },
@@ -484,6 +485,7 @@ function getDefaultSeedData(): StoredData {
         all_day: 0,
         color: '#14b8a6',
         is_ghost: 1,
+        ghost_id: 'ghost_jordan',
         ghost_name: 'Jordan (Child)',
         created_at: now,
       },
@@ -850,10 +852,11 @@ export async function handleClientStorageRequest(
       if (!ghost) {
         throw new Error('Ghost not found.');
       }
+      const oldGhostName = ghost.name;
       if (body.name !== undefined) {
         ghost.name = body.name;
         db.meetings.forEach((m) => {
-          if ((m as any).ghost_id === ghostId) {
+          if ((m as any).ghost_id === ghostId || m.ghost_name?.toLowerCase().includes(oldGhostName.toLowerCase())) {
             m.ghost_name = body.name;
           }
         });
@@ -862,7 +865,7 @@ export async function handleClientStorageRequest(
       if (body.color !== undefined) {
         ghost.color = body.color;
         db.meetings.forEach((m) => {
-          if ((m as any).ghost_id === ghostId) {
+          if ((m as any).ghost_id === ghostId || m.ghost_name?.toLowerCase().includes(oldGhostName.toLowerCase())) {
             m.color = body.color;
           }
         });
