@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CalendarSource, Ghost } from '../types';
 import { X, Calendar, RefreshCw, Trash2, Plus, Upload, Link2, CheckCircle2, UserCheck } from 'lucide-react';
+import { fetchJson } from '../apiHelper';
 
 interface CalendarModalProps {
   isOpen: boolean;
@@ -53,19 +54,17 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
   const fetchSourcesAndGhosts = async () => {
     try {
       const [resCals, resGhosts] = await Promise.all([
-        fetch('/api/v1/calendars', { headers: { 'X-API-Key': apiKey } }),
-        fetch('/api/v1/ghosts', { headers: { 'X-API-Key': apiKey } }),
+        fetchJson<{ calendars: CalendarSource[] }>('/api/v1/calendars', { headers: { 'X-API-Key': apiKey } }),
+        fetchJson<{ ghosts: Ghost[] }>('/api/v1/ghosts', { headers: { 'X-API-Key': apiKey } }),
       ]);
 
-      if (resCals.ok) {
-        const data = await resCals.json();
-        setSources(data.calendars || []);
+      if (resCals?.calendars) {
+        setSources(resCals.calendars);
       }
-      if (resGhosts.ok) {
-        const data = await resGhosts.json();
-        setGhosts(data.ghosts || []);
-        if (data.ghosts && data.ghosts.length > 0 && !selectedGhostIdForMeeting) {
-          setSelectedGhostIdForMeeting(data.ghosts[0].id);
+      if (resGhosts?.ghosts) {
+        setGhosts(resGhosts.ghosts);
+        if (resGhosts.ghosts.length > 0 && !selectedGhostIdForMeeting) {
+          setSelectedGhostIdForMeeting(resGhosts.ghosts[0].id);
         }
       }
     } catch (e) {
@@ -90,7 +89,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
 
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/ghosts', {
+      await fetchJson('/api/v1/ghosts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -104,15 +103,15 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
         }),
       });
 
-      if (res.ok) {
-        setGhostName('');
-        setGhostRelation('');
-        setGhostIcsUrl('');
-        setSuccessMsg('Ghost added and synced!');
-        setTimeout(() => setSuccessMsg(null), 3000);
-        await fetchSourcesAndGhosts();
-        onRefreshMeetings();
-      }
+      setGhostName('');
+      setGhostRelation('');
+      setGhostIcsUrl('');
+      setSuccessMsg('Ghost added and synced!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+      await fetchSourcesAndGhosts();
+      onRefreshMeetings();
+    } catch (err: any) {
+      console.error('Error adding ghost:', err);
     } finally {
       setLoading(false);
     }
@@ -121,16 +120,16 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
   const handleSyncGhost = async (ghostId: string) => {
     setSyncingId(ghostId);
     try {
-      const res = await fetch(`/api/v1/ghosts/${ghostId}/sync`, {
+      await fetchJson(`/api/v1/ghosts/${ghostId}/sync`, {
         method: 'POST',
         headers: { 'X-API-Key': apiKey },
       });
-      if (res.ok) {
-        setSuccessMsg('Ghost calendar synced successfully!');
-        setTimeout(() => setSuccessMsg(null), 3000);
-        await fetchSourcesAndGhosts();
-        onRefreshMeetings();
-      }
+      setSuccessMsg('Ghost calendar synced successfully!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+      await fetchSourcesAndGhosts();
+      onRefreshMeetings();
+    } catch (err: any) {
+      console.error('Error syncing ghost:', err);
     } finally {
       setSyncingId(null);
     }
@@ -138,7 +137,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
 
   const handleDeleteGhost = async (ghostId: string) => {
     try {
-      await fetch(`/api/v1/ghosts/${ghostId}`, {
+      await fetchJson(`/api/v1/ghosts/${ghostId}`, {
         method: 'DELETE',
         headers: { 'X-API-Key': apiKey },
       });
@@ -156,7 +155,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
 
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/calendars', {
+      await fetchJson('/api/v1/calendars', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -169,14 +168,14 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
         }),
       });
 
-      if (res.ok) {
-        setFeedName('');
-        setFeedUrl('');
-        setSuccessMsg('Calendar feed added and synced!');
-        setTimeout(() => setSuccessMsg(null), 3000);
-        await fetchSourcesAndGhosts();
-        onRefreshMeetings();
-      }
+      setFeedName('');
+      setFeedUrl('');
+      setSuccessMsg('Calendar feed added and synced!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+      await fetchSourcesAndGhosts();
+      onRefreshMeetings();
+    } catch (err: any) {
+      console.error('Error adding feed:', err);
     } finally {
       setLoading(false);
     }
@@ -185,16 +184,16 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
   const handleSyncFeed = async (sourceId: string) => {
     setSyncingId(sourceId);
     try {
-      const res = await fetch(`/api/v1/calendars/${sourceId}/sync`, {
+      await fetchJson(`/api/v1/calendars/${sourceId}/sync`, {
         method: 'POST',
         headers: { 'X-API-Key': apiKey },
       });
-      if (res.ok) {
-        setSuccessMsg('Calendar synced successfully!');
-        setTimeout(() => setSuccessMsg(null), 3000);
-        await fetchSourcesAndGhosts();
-        onRefreshMeetings();
-      }
+      setSuccessMsg('Calendar synced successfully!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+      await fetchSourcesAndGhosts();
+      onRefreshMeetings();
+    } catch (err: any) {
+      console.error('Error syncing feed:', err);
     } finally {
       setSyncingId(null);
     }
@@ -202,7 +201,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
 
   const handleDeleteFeed = async (sourceId: string) => {
     try {
-      await fetch(`/api/v1/calendars/${sourceId}`, {
+      await fetchJson(`/api/v1/calendars/${sourceId}`, {
         method: 'DELETE',
         headers: { 'X-API-Key': apiKey },
       });
@@ -223,7 +222,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
       const startDateTime = `${meetingDate}T${meetingStart}:00Z`;
       const endDateTime = `${meetingDate}T${meetingEnd}:00Z`;
 
-      const res = await fetch('/api/v1/meetings', {
+      await fetchJson('/api/v1/meetings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -240,16 +239,16 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
         }),
       });
 
-      if (res.ok) {
-        setMeetingTitle('');
-        setMeetingLocation('');
-        setMeetingUrl('');
-        setIsGhostMeeting(false);
-        setSuccessMsg('Event added to agenda!');
-        setTimeout(() => setSuccessMsg(null), 3000);
-        onRefreshMeetings();
-        onClose();
-      }
+      setMeetingTitle('');
+      setMeetingLocation('');
+      setMeetingUrl('');
+      setIsGhostMeeting(false);
+      setSuccessMsg('Event added to agenda!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+      onRefreshMeetings();
+      onClose();
+    } catch (err: any) {
+      console.error('Error creating meeting:', err);
     } finally {
       setLoading(false);
     }
@@ -260,7 +259,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
     if (!rawIcsText.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/calendars/import-ics', {
+      const data = await fetchJson<{ count: number }>('/api/v1/calendars/import-ics', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -268,13 +267,12 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
         },
         body: JSON.stringify({ ics_text: rawIcsText.trim() }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setRawIcsText('');
-        setSuccessMsg(`Imported ${data.count} calendar events!`);
-        setTimeout(() => setSuccessMsg(null), 3000);
-        onRefreshMeetings();
-      }
+      setRawIcsText('');
+      setSuccessMsg(`Imported ${data?.count || 0} calendar events!`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+      onRefreshMeetings();
+    } catch (err: any) {
+      console.error('Error importing ICS:', err);
     } finally {
       setLoading(false);
     }

@@ -142,15 +142,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onClose, canClo
       const key = apiKeyInput.trim();
       if (!key) throw new Error('API key cannot be empty');
 
-      const res = await fetch('/api/v1/auth/me', {
+      const user = await fetchJson('/api/v1/auth/me', {
         headers: { 'X-API-Key': key },
       });
 
-      if (!res.ok) {
-        throw new Error('Invalid API Key');
-      }
-
-      const user = await res.json();
       onSuccess({
         id: user.id,
         username: user.username,
@@ -167,8 +162,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onClose, canClo
   const handleQuickTestUser = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/default-user');
-      const data = await res.json();
+      const data = await fetchJson('/api/v1/auth/default-user');
       if (data?.apiKey) {
         onSuccess(data);
       }

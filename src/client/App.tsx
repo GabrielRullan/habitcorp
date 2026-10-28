@@ -177,13 +177,10 @@ export const App: React.FC = () => {
   const fetchGhosts = async () => {
     if (!auth) return;
     try {
-      const res = await fetch('/api/v1/ghosts', {
+      const data = await fetchJson('/api/v1/ghosts', {
         headers: { 'X-API-Key': auth.apiKey },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setGhosts(data.ghosts || []);
-      }
+      setGhosts(data.ghosts || []);
     } catch (e) {
       console.error(e);
     }
@@ -192,13 +189,10 @@ export const App: React.FC = () => {
   const fetchProjects = async () => {
     if (!auth) return;
     try {
-      const res = await fetch('/api/v1/projects', {
+      const data = await fetchJson('/api/v1/projects', {
         headers: { 'X-API-Key': auth.apiKey },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data.projects || []);
-      }
+      setProjects(data.projects || []);
     } catch (e) {
       console.error(e);
     }
@@ -207,13 +201,10 @@ export const App: React.FC = () => {
   const fetchTasks = async () => {
     if (!auth) return;
     try {
-      const res = await fetch('/api/v1/tasks', {
+      const data = await fetchJson('/api/v1/tasks', {
         headers: { 'X-API-Key': auth.apiKey },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data.tasks || []);
-      }
+      setTasks(data.tasks || []);
     } catch (e) {
       console.error(e);
     }
@@ -227,22 +218,16 @@ export const App: React.FC = () => {
       const end = new Date(selectedDate);
       end.setDate(end.getDate() + 14);
 
-      const [resMeetings, resGhosts] = await Promise.all([
-        fetch(
+      const [dataMeetings, dataGhosts] = await Promise.all([
+        fetchJson(
           `/api/v1/meetings?start=${start.toISOString().slice(0, 10)}&end=${end.toISOString().slice(0, 10)}`,
           { headers: { 'X-API-Key': auth.apiKey } }
         ),
-        fetch('/api/v1/ghosts', { headers: { 'X-API-Key': auth.apiKey } }),
+        fetchJson('/api/v1/ghosts', { headers: { 'X-API-Key': auth.apiKey } }),
       ]);
 
-      if (resMeetings.ok) {
-        const data = await resMeetings.json();
-        setMeetings(data.meetings || []);
-      }
-      if (resGhosts.ok) {
-        const dataG = await resGhosts.json();
-        setGhosts(dataG.ghosts || []);
-      }
+      setMeetings(dataMeetings.meetings || []);
+      setGhosts(dataGhosts.ghosts || []);
     } catch (e) {
       console.error(e);
     }
@@ -267,7 +252,7 @@ export const App: React.FC = () => {
   const handleCreateProject = async (name: string, color: string): Promise<string | undefined> => {
     if (!auth || !name.trim()) return;
     try {
-      const res = await fetch('/api/v1/projects', {
+      const created = await fetchJson('/api/v1/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -275,11 +260,8 @@ export const App: React.FC = () => {
         },
         body: JSON.stringify({ name: name.trim(), color }),
       });
-      if (res.ok) {
-        const created = await res.json();
-        await fetchProjects();
-        return created.id;
-      }
+      await fetchProjects();
+      return created.id;
     } catch (e) {
       console.error(e);
     }
@@ -289,14 +271,12 @@ export const App: React.FC = () => {
     if (!auth) return;
     if (!confirm('Are you sure you want to delete this project? Tasks will remain as standalone items.')) return;
     try {
-      const res = await fetch(`/api/v1/projects/${projectId}`, {
+      await fetchJson(`/api/v1/projects/${projectId}`, {
         method: 'DELETE',
         headers: { 'X-API-Key': auth.apiKey },
       });
-      if (res.ok) {
-        if (selectedProjectId === projectId) setSelectedProjectId('all');
-        await Promise.all([fetchProjects(), fetchTasks()]);
-      }
+      if (selectedProjectId === projectId) setSelectedProjectId('all');
+      await Promise.all([fetchProjects(), fetchTasks()]);
     } catch (e) {
       console.error(e);
     }
@@ -325,7 +305,7 @@ export const App: React.FC = () => {
     );
 
     try {
-      const res = await fetch(`/api/v1/tasks/${taskId}/score`, {
+      const updated = await fetchJson(`/api/v1/tasks/${taskId}/score`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -333,10 +313,7 @@ export const App: React.FC = () => {
         },
         body: JSON.stringify({ direction }),
       });
-      if (res.ok) {
-        const updated = await res.json();
-        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)));
-      }
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)));
     } catch (e) {
       console.error(e);
     }
@@ -349,7 +326,7 @@ export const App: React.FC = () => {
       prev.map((t) => (t.id === taskId ? { ...t, due_date: todayStr } : t))
     );
     try {
-      const res = await fetch(`/api/v1/tasks/${taskId}`, {
+      await fetchJson(`/api/v1/tasks/${taskId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -357,9 +334,7 @@ export const App: React.FC = () => {
         },
         body: JSON.stringify({ due_date: todayStr }),
       });
-      if (res.ok) {
-        await fetchTasks();
-      }
+      await fetchTasks();
     } catch (e) {
       console.error(e);
     }
@@ -391,7 +366,7 @@ export const App: React.FC = () => {
     );
 
     try {
-      const res = await fetch(`/api/v1/tasks/${taskId}`, {
+      await fetchJson(`/api/v1/tasks/${taskId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -404,9 +379,7 @@ export const App: React.FC = () => {
           due_date: isHabit ? targetTask?.due_date : (targetTask?.due_date || date),
         }),
       });
-      if (res.ok) {
-        await fetchTasks();
-      }
+      await fetchTasks();
     } catch (e) {
       console.error(e);
     }
@@ -454,7 +427,7 @@ export const App: React.FC = () => {
     const blockTitle = title?.trim() || 'Deep Work Focus Block';
 
     try {
-      const res = await fetch('/api/v1/tasks', {
+      const created = await fetchJson('/api/v1/tasks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -470,12 +443,9 @@ export const App: React.FC = () => {
         }),
       });
 
-      if (res.ok) {
-        const created = await res.json();
-        setTasks((prev) => [created, ...prev]);
-        setSelectedDate(todayStr);
-        await fetchTasks();
-      }
+      setTasks((prev) => [created, ...prev]);
+      setSelectedDate(todayStr);
+      await fetchTasks();
     } catch (e) {
       console.error('Failed to block focus session on agenda:', e);
     }
@@ -491,7 +461,7 @@ export const App: React.FC = () => {
     );
 
     try {
-      await fetch(`/api/v1/tasks/${taskId}`, {
+      await fetchJson(`/api/v1/tasks/${taskId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -525,7 +495,7 @@ export const App: React.FC = () => {
     );
 
     try {
-      await fetch(`/api/v1/tasks/${taskId}`, {
+      await fetchJson(`/api/v1/tasks/${taskId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -558,7 +528,7 @@ export const App: React.FC = () => {
     );
 
     try {
-      await fetch(`/api/v1/tasks/${taskId}`, {
+      await fetchJson(`/api/v1/tasks/${taskId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -595,7 +565,7 @@ export const App: React.FC = () => {
         }
       }
 
-      const res = await fetch('/api/v1/tasks', {
+      await fetchJson('/api/v1/tasks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -604,10 +574,8 @@ export const App: React.FC = () => {
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        setQuickTitle('');
-        await fetchTasks();
-      }
+      setQuickTitle('');
+      await fetchTasks();
     } catch (e) {
       console.error(e);
     }
@@ -617,7 +585,7 @@ export const App: React.FC = () => {
   const handleSaveTask = async (taskData: any) => {
     if (!auth) return;
     if (editingTask) {
-      const res = await fetch(`/api/v1/tasks/${editingTask.id}`, {
+      await fetchJson(`/api/v1/tasks/${editingTask.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -625,9 +593,9 @@ export const App: React.FC = () => {
         },
         body: JSON.stringify(taskData),
       });
-      if (res.ok) await fetchTasks();
+      await fetchTasks();
     } else {
-      const res = await fetch('/api/v1/tasks', {
+      await fetchJson('/api/v1/tasks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -635,7 +603,7 @@ export const App: React.FC = () => {
         },
         body: JSON.stringify(taskData),
       });
-      if (res.ok) await fetchTasks();
+      await fetchTasks();
     }
   };
 

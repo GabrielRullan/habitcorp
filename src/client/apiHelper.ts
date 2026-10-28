@@ -1,29 +1,44 @@
 /**
- * Resilient JSON fetch utility that prevents the dreaded:
- * "Unexpected token '<', '<!doctype '... is not valid JSON"
- * error when a static hosting CDN serves index.html on missing API routes.
+ * Resilient JSON fetch utility with automatic Local-First Storage fallback
+ * Prevents "Unexpected token '<', '<!doctype '... is not valid JSON"
+ * by seamlessly falling back to in-browser storage when static CDN hosting is detected.
  */
+
+import { handleClientStorageRequest } from './clientStore';
+
 export async function fetchJson<T = any>(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<T> {
-  const res = await fetch(input, init);
-  const contentType = res.headers.get('content-type') || '';
+  const urlStr = typeof input === 'string' ? input : input.toString();
 
-  // If the server answered with HTML (e.g. Firebase Hosting rewriting 404 to /index.html)
-  if (!contentType.includes('application/json')) {
-    const text = await res.text();
-    if (text.trim().toLowerCase().startsWith('<!doctype') || text.trim().startsWith('<')) {
-      throw new Error(
-        'The backend API is not connected on this static web host. If using Firebase Hosting, deploy the Cloud Run/Functions backend, or run locally via npm run dev.'
-      );
+  try {
+    const res = await fetch(input, init);
+    const contentType = res.headers.get('content-type') || '';
+
+    // If static hosting returned HTML or non-JSON instead of API JSON (e.g. Firebase Hosting rewrite)
+    if (!contentType.includes('application/json')) {
+      if (urlStr.startsWith('/api/v1/')) {
+        return handleClientStorageRequest(urlStr, init);
+      }
+      const text = await res.text();
+      throw new Error(`Unexpected non-JSON response from server (status ${res.status}): ${text.slice(0, 80)}`);
     }
-    throw new Error(`Unexpected non-JSON response from server (status ${res.status}): ${text.slice(0, 80)}`);
-  }
 
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || `Request failed with status ${res.status}`);
+    if (res.status === 404 && urlStr.startsWith('/api/v1/')) {
+      return handleClientStorageRequest(urlStr, init);
+    }
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `Request failed with status ${res.status}`);
+    }
+    return data;
+  } catch (err: any) {
+    // If network failed completely or returned non-JSON, fallback to client-side local-first store
+    if (urlStr.startsWith('/api/v1/')) {
+      return handleClientStorageRequest(urlStr, init);
+    }
+    throw err;
   }
-  return data;
 }
