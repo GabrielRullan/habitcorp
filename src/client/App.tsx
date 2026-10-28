@@ -75,15 +75,8 @@ export const App: React.FC = () => {
 
   // Filters
   const [selectedProjectId, setSelectedProjectId] = useState<string | 'all'>('all');
-  const [difficultyFilter, setDifficultyFilter] = useState<DifficultyTier | 'all'>('all');
+  const [difficultyFilter] = useState<DifficultyTier | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Quick-Add bar
-  const [quickTitle, setQuickTitle] = useState('');
-  const [quickKind, setQuickKind] = useState<'habit' | 'task'>('task');
-  const [quickDifficulty, setQuickDifficulty] = useState<DifficultyTier>('easy');
-  const [quickForToday, setQuickForToday] = useState(true);
-  const [quickProjectId, setQuickProjectId] = useState<string>('');
 
   // Modals
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -639,45 +632,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // Quick Add submission
-  const handleQuickAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickTitle.trim() || !auth) return;
-
-    try {
-      const payload: any = {
-        title: quickTitle.trim(),
-        difficulty: quickDifficulty,
-        project_id: quickProjectId || null,
-      };
-
-      if (quickKind === 'habit') {
-        payload.type = 'daily';
-        payload.frequency = 'daily';
-        payload.habit_positive = true;
-      } else {
-        payload.type = 'todo';
-        if (quickForToday) {
-          payload.due_date = todayStr;
-        }
-      }
-
-      await fetchJson('/api/v1/tasks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': auth.apiKey,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      setQuickTitle('');
-      await fetchTasks();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   // Save Task (Modal)
   const handleSaveTask = async (taskData: any) => {
     if (!auth) return;
@@ -859,6 +813,18 @@ export const App: React.FC = () => {
 
           {/* Right Action Icons */}
           <div className="flex items-center gap-2">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-stone-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search..."
+                className="bg-stone-50 hover:bg-stone-100 focus:bg-white border border-stone-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-400 w-32 sm:w-48 shadow-2xs transition"
+              />
+            </div>
+
             <button
               onClick={() => {
                 setEditingTask(null);
@@ -1034,134 +1000,6 @@ export const App: React.FC = () => {
             </button>
           </div>
         </div>
-      </section>
-
-      {/* Filter Bar with Pastel Pills & Search */}
-      <section className="bg-white/50 border-b border-stone-200/60 px-4 py-1.5">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          {/* Difficulty / Energy Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 text-xs">
-            <span className="font-semibold text-stone-400 uppercase tracking-wider text-[10px] mr-1">
-              Difficulty:
-            </span>
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'trivial', label: 'Trivial', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-              { id: 'easy', label: 'Easy', color: 'bg-sky-50 text-sky-700 border-sky-200' },
-              { id: 'medium', label: 'Medium', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-              { id: 'hard', label: 'Hard', color: 'bg-rose-50 text-rose-700 border-rose-200' },
-            ].map((tier) => (
-              <button
-                key={tier.id}
-                onClick={() => setDifficultyFilter(tier.id as any)}
-                className={`px-2 py-0.5 rounded-lg font-medium border text-xs transition ${
-                  difficultyFilter === tier.id
-                    ? `${tier.color || 'bg-stone-800 text-white'} shadow-2xs font-semibold`
-                    : 'bg-white border-stone-200 text-stone-500 hover:bg-stone-50'
-                }`}
-              >
-                {tier.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1.5 w-3.5 h-3.5 text-stone-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search tasks, habits, projects..."
-              className="bg-white border border-stone-200 rounded-xl pl-8 pr-3 py-1 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-400 w-52 shadow-2xs"
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Habitica-Style Quick Add Bar */}
-      <section className="bg-white px-4 py-2 border-b border-stone-200/80 shadow-2xs">
-        <form
-          onSubmit={handleQuickAdd}
-          className="max-w-7xl mx-auto flex flex-wrap items-center gap-2 text-xs"
-        >
-          <div className="flex-1 min-w-[200px]">
-            <input
-              type="text"
-              value={quickTitle}
-              onChange={(e) => setQuickTitle(e.target.value)}
-              placeholder={quickKind === 'habit' ? 'Add habit (e.g. Daily 20m Anki flashcards)...' : 'Add task (e.g. Complete chapter 4 exercise)...'}
-              className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-400 focus:bg-white"
-            />
-          </div>
-
-          <div className="flex p-0.5 bg-stone-100 rounded-xl border border-stone-200 text-xs">
-            <button
-              type="button"
-              onClick={() => setQuickKind('task')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                quickKind === 'task' ? 'bg-white text-indigo-800 shadow-2xs font-semibold' : 'text-stone-500'
-              }`}
-            >
-              Task
-            </button>
-            <button
-              type="button"
-              onClick={() => setQuickKind('habit')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                quickKind === 'habit' ? 'bg-white text-emerald-800 shadow-2xs font-semibold' : 'text-stone-500'
-              }`}
-            >
-              Habit
-            </button>
-          </div>
-
-          {quickKind === 'task' && (
-            <label className="flex items-center gap-1.5 px-2.5 py-1 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl cursor-pointer text-stone-600">
-              <input
-                type="checkbox"
-                checked={quickForToday}
-                onChange={(e) => setQuickForToday(e.target.checked)}
-                className="rounded border-stone-300 text-indigo-600 focus:ring-0 w-3.5 h-3.5"
-              />
-              <span className="font-medium text-xs">For Today</span>
-            </label>
-          )}
-
-          {projects.length > 0 && (
-            <select
-              value={quickProjectId}
-              onChange={(e) => setQuickProjectId(e.target.value)}
-              className="bg-stone-50 border border-stone-200 rounded-xl px-2 py-1.5 text-xs text-stone-700 focus:outline-none focus:border-indigo-400 cursor-pointer"
-            >
-              <option value="">No Project</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  ● {p.name}
-                </option>
-              ))}
-            </select>
-          )}
-
-          <select
-            value={quickDifficulty}
-            onChange={(e) => setQuickDifficulty(e.target.value as DifficultyTier)}
-            className="bg-stone-50 border border-stone-200 rounded-xl px-2 py-1.5 text-xs text-stone-700 focus:outline-none focus:border-indigo-400 cursor-pointer"
-          >
-            <option value="trivial">Trivial</option>
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
-
-          <button
-            type="submit"
-            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition shadow-xs flex items-center gap-1"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add</span>
-          </button>
-        </form>
       </section>
 
       {/* Pomodoro Timer (Milestone 3 & Pomodoro Suite) */}
