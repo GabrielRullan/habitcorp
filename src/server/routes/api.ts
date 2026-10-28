@@ -1125,7 +1125,41 @@ apiRouter.delete('/calendars/:id', (req, res) => {
     res.status(404).json({ error: 'Calendar source not found.' });
     return;
   }
-  res.json({ message: 'Calendar feed deleted.' });
+  res.json({ success: true, message: 'Calendar feed deleted.' });
+});
+
+apiRouter.patch('/calendars/:id', (req, res) => {
+  const userId = req.user!.id;
+  const db = getDb();
+  const feed = db.prepare('SELECT * FROM calendar_sources WHERE id = ? AND user_id = ?').get(req.params.id, userId) as any;
+
+  if (!feed) {
+    res.status(404).json({ error: 'Calendar source not found.' });
+    return;
+  }
+
+  const b = req.body || {};
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  ['name', 'color', 'ics_url'].forEach((field) => {
+    if (b[field] !== undefined) {
+      updates.push(`${field} = ?`);
+      values.push(b[field]);
+    }
+  });
+
+  if (updates.length > 0) {
+    values.push(req.params.id, userId);
+    db.prepare(`UPDATE calendar_sources SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`).run(...values);
+  }
+
+  if (b.color !== undefined) {
+    db.prepare('UPDATE calendar_events SET color = ? WHERE source_id = ? AND user_id = ?').run(b.color, req.params.id, userId);
+  }
+
+  const updated = db.prepare('SELECT * FROM calendar_sources WHERE id = ?').get(req.params.id);
+  res.json(updated);
 });
 
 // --- GHOSTS (External People: Spouse, Children, Roommates, etc.) ---
@@ -1203,6 +1237,13 @@ apiRouter.patch('/ghosts/:id', async (req, res) => {
     db.prepare(`UPDATE ghosts SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`).run(...values);
   }
 
+  if (b.name !== undefined) {
+    db.prepare('UPDATE calendar_events SET ghost_name = ? WHERE ghost_id = ? AND user_id = ?').run(b.name, req.params.id, userId);
+  }
+  if (b.color !== undefined) {
+    db.prepare('UPDATE calendar_events SET color = ? WHERE ghost_id = ? AND user_id = ?').run(b.color, req.params.id, userId);
+  }
+
   const updated = db.prepare('SELECT * FROM ghosts WHERE id = ?').get(req.params.id);
   res.json(updated);
 });
@@ -1255,7 +1296,7 @@ apiRouter.delete('/ghosts/:id', (req, res) => {
     res.status(404).json({ error: 'Ghost not found.' });
     return;
   }
-  res.json({ message: 'Ghost deleted.' });
+  res.json({ success: true, message: 'Ghost deleted.' });
 });
 
 // --- PROJECT ROUTES ---

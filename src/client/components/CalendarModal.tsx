@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CalendarSource, Ghost } from '../types';
-import { X, Calendar, RefreshCw, Trash2, Plus, Upload, Link2, CheckCircle2, UserCheck } from 'lucide-react';
+import { X, Calendar, RefreshCw, Trash2, Plus, Upload, Link2, CheckCircle2, UserCheck, Pencil, Check } from 'lucide-react';
 import { fetchJson } from '../apiHelper';
 
 interface CalendarModalProps {
@@ -30,11 +30,24 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
   const [feedUrl, setFeedUrl] = useState('');
   const [feedColor, setFeedColor] = useState('#6366f1');
 
+  // Edit Feed State
+  const [editingFeedId, setEditingFeedId] = useState<string | null>(null);
+  const [editFeedName, setEditFeedName] = useState('');
+  const [editFeedColor, setEditFeedColor] = useState('#6366f1');
+  const [editFeedIcsUrl, setEditFeedIcsUrl] = useState('');
+
   // Ghost Form
   const [ghostName, setGhostName] = useState('');
   const [ghostRelation, setGhostRelation] = useState('');
   const [ghostColor, setGhostColor] = useState('#ec4899');
   const [ghostIcsUrl, setGhostIcsUrl] = useState('');
+
+  // Edit Ghost State
+  const [editingGhostId, setEditingGhostId] = useState<string | null>(null);
+  const [editGhostName, setEditGhostName] = useState('');
+  const [editGhostRelation, setEditGhostRelation] = useState('');
+  const [editGhostColor, setEditGhostColor] = useState('#ec4899');
+  const [editGhostIcsUrl, setEditGhostIcsUrl] = useState('');
 
   // Manual Meeting Form
   const [meetingTitle, setMeetingTitle] = useState('');
@@ -148,6 +161,43 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
     }
   };
 
+  const handleStartEditGhost = (g: Ghost) => {
+    setEditingGhostId(g.id);
+    setEditGhostName(g.name);
+    setEditGhostRelation(g.relation || '');
+    setEditGhostColor(g.color || '#ec4899');
+    setEditGhostIcsUrl(g.ics_url || '');
+  };
+
+  const handleSaveGhostEdit = async (ghostId: string) => {
+    if (!editGhostName.trim()) return;
+    setLoading(true);
+    try {
+      await fetchJson(`/api/v1/ghosts/${ghostId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({
+          name: editGhostName.trim(),
+          relation: editGhostRelation.trim(),
+          color: editGhostColor,
+          ics_url: editGhostIcsUrl.trim(),
+        }),
+      });
+      setEditingGhostId(null);
+      setSuccessMsg('Ghost contact updated!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+      await fetchSourcesAndGhosts();
+      onRefreshMeetings();
+    } catch (err: any) {
+      console.error('Error updating ghost:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Add / Sync / Delete Sources
   const handleAddFeed = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,6 +259,41 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
       onRefreshMeetings();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleStartEditFeed = (s: CalendarSource) => {
+    setEditingFeedId(s.id);
+    setEditFeedName(s.name);
+    setEditFeedColor(s.color || '#6366f1');
+    setEditFeedIcsUrl(s.ics_url || '');
+  };
+
+  const handleSaveFeedEdit = async (sourceId: string) => {
+    if (!editFeedName.trim()) return;
+    setLoading(true);
+    try {
+      await fetchJson(`/api/v1/calendars/${sourceId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({
+          name: editFeedName.trim(),
+          color: editFeedColor,
+          ics_url: editFeedIcsUrl.trim(),
+        }),
+      });
+      setEditingFeedId(null);
+      setSuccessMsg('Calendar feed updated!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+      await fetchSourcesAndGhosts();
+      onRefreshMeetings();
+    } catch (err: any) {
+      console.error('Error updating feed:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -343,52 +428,144 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                 ) : (
                   <div className="space-y-2">
                     {ghosts.map((g) => (
-                      <div
-                        key={g.id}
-                        className="flex items-center justify-between p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs shadow-2xs"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className="w-3.5 h-3.5 rounded-full shrink-0 flex items-center justify-center text-[10px]"
-                            style={{ backgroundColor: g.color }}
-                          />
-                          <div>
-                            <div className="font-semibold text-stone-800 flex items-center gap-1.5">
-                              <span>👻 {g.name}</span>
-                              {g.relation && (
-                                <span className="text-[10px] text-pink-700 bg-pink-100 px-1.5 py-0.2 rounded-full border border-pink-200 font-medium">
-                                  {g.relation}
-                                </span>
-                              )}
+                      editingGhostId === g.id ? (
+                        <div
+                          key={g.id}
+                          className="p-3.5 bg-white border-2 border-pink-300 rounded-xl text-xs shadow-xs space-y-2.5 animate-in fade-in-50"
+                        >
+                          <div className="flex items-center justify-between font-semibold text-pink-900 border-b border-pink-100 pb-1.5">
+                            <span className="flex items-center gap-1.5">
+                              <Pencil className="w-3.5 h-3.5 text-pink-600" />
+                              <span>Edit Ghost: {g.name}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setEditingGhostId(null)}
+                              className="text-stone-400 hover:text-stone-600 p-0.5"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-[1fr_1fr_50px] gap-2">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">Name</label>
+                              <input
+                                type="text"
+                                required
+                                value={editGhostName}
+                                onChange={(e) => setEditGhostName(e.target.value)}
+                                placeholder="Name"
+                                className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-800 focus:outline-none focus:border-pink-400 focus:bg-white"
+                              />
                             </div>
-                            <div className="text-[10px] text-stone-500 truncate max-w-xs">
-                              {g.ics_url ? g.ics_url : 'Manual events only'}
+                            <div>
+                              <label className="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">Relation</label>
+                              <input
+                                type="text"
+                                value={editGhostRelation}
+                                onChange={(e) => setEditGhostRelation(e.target.value)}
+                                placeholder="Relation"
+                                className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-800 focus:outline-none focus:border-pink-400 focus:bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">Color</label>
+                              <input
+                                type="color"
+                                value={editGhostColor}
+                                onChange={(e) => setEditGhostColor(e.target.value)}
+                                className="w-full h-8 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer p-0.5"
+                                title="Ghost badge color"
+                              />
                             </div>
                           </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          {g.ics_url && (
-                            <button
-                              onClick={() => handleSyncGhost(g.id)}
-                              disabled={syncingId === g.id}
-                              className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-200/60 rounded-lg transition"
-                              title="Sync Ghost Calendar"
-                            >
-                              <RefreshCw
-                                className={`w-3.5 h-3.5 ${syncingId === g.id ? 'animate-spin' : ''}`}
+                          <div>
+                            <label className="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">ICS Calendar URL</label>
+                            <div className="relative">
+                              <Link2 className="absolute left-2.5 top-2 w-3 h-3 text-stone-400" />
+                              <input
+                                type="url"
+                                value={editGhostIcsUrl}
+                                onChange={(e) => setEditGhostIcsUrl(e.target.value)}
+                                placeholder="Optional .ics URL"
+                                className="w-full bg-stone-50 border border-stone-200 rounded-lg pl-7 pr-2.5 py-1.5 text-xs text-stone-800 focus:outline-none focus:border-pink-400 focus:bg-white"
                               />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingGhostId(null)}
+                              className="px-2.5 py-1 border border-stone-200 text-stone-600 hover:bg-stone-50 rounded-lg text-xs font-medium transition"
+                            >
+                              Cancel
                             </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteGhost(g.id)}
-                            className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-stone-200/60 rounded-lg transition"
-                            title="Delete Ghost"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveGhostEdit(g.id)}
+                              disabled={loading || !editGhostName.trim()}
+                              className="px-3 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-xs font-semibold transition flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Save Changes</span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div
+                          key={g.id}
+                          className="flex items-center justify-between p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs shadow-2xs hover:border-stone-300 transition"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className="w-3.5 h-3.5 rounded-full shrink-0 flex items-center justify-center text-[10px]"
+                              style={{ backgroundColor: g.color }}
+                            />
+                            <div>
+                              <div className="font-semibold text-stone-800 flex items-center gap-1.5">
+                                <span>👻 {g.name}</span>
+                                {g.relation && (
+                                  <span className="text-[10px] text-pink-700 bg-pink-100 px-1.5 py-0.2 rounded-full border border-pink-200 font-medium">
+                                    {g.relation}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-stone-500 truncate max-w-xs">
+                                {g.ics_url ? g.ics_url : 'Manual events only'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            {g.ics_url && (
+                              <button
+                                onClick={() => handleSyncGhost(g.id)}
+                                disabled={syncingId === g.id}
+                                className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-200/60 rounded-lg transition"
+                                title="Sync Ghost Calendar"
+                              >
+                                <RefreshCw
+                                  className={`w-3.5 h-3.5 ${syncingId === g.id ? 'animate-spin' : ''}`}
+                                />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleStartEditGhost(g)}
+                              className="p-1.5 text-stone-500 hover:text-pink-700 hover:bg-pink-50 rounded-lg transition"
+                              title="Edit Ghost"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGhost(g.id)}
+                              className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-stone-200/60 rounded-lg transition"
+                              title="Delete Ghost"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )
                     ))}
                   </div>
                 )}
@@ -461,43 +638,125 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                 ) : (
                   <div className="space-y-2">
                     {sources.map((s) => (
-                      <div
-                        key={s.id}
-                        className="flex items-center justify-between p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs shadow-2xs"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className="w-3 h-3 rounded-full shrink-0"
-                            style={{ backgroundColor: s.color }}
-                          />
-                          <div>
-                            <div className="font-semibold text-stone-800">{s.name}</div>
-                            <div className="text-[10px] text-stone-500 truncate max-w-xs">
-                              {s.ics_url}
+                      editingFeedId === s.id ? (
+                        <div
+                          key={s.id}
+                          className="p-3.5 bg-white border-2 border-indigo-300 rounded-xl text-xs shadow-xs space-y-2.5 animate-in fade-in-50"
+                        >
+                          <div className="flex items-center justify-between font-semibold text-indigo-900 border-b border-indigo-100 pb-1.5">
+                            <span className="flex items-center gap-1.5">
+                              <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Edit Feed: {s.name}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setEditingFeedId(null)}
+                              className="text-stone-400 hover:text-stone-600 p-0.5"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-[1fr_60px] gap-2">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">Feed Name</label>
+                              <input
+                                type="text"
+                                required
+                                value={editFeedName}
+                                onChange={(e) => setEditFeedName(e.target.value)}
+                                placeholder="Feed Name"
+                                className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-800 focus:outline-none focus:border-indigo-400 focus:bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">Color</label>
+                              <input
+                                type="color"
+                                value={editFeedColor}
+                                onChange={(e) => setEditFeedColor(e.target.value)}
+                                className="w-full h-8 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer p-0.5"
+                                title="Feed color"
+                              />
                             </div>
                           </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">ICS Feed URL</label>
+                            <div className="relative">
+                              <Link2 className="absolute left-2.5 top-2 w-3 h-3 text-stone-400" />
+                              <input
+                                type="url"
+                                value={editFeedIcsUrl}
+                                onChange={(e) => setEditFeedIcsUrl(e.target.value)}
+                                placeholder="https://.../calendar.ics"
+                                className="w-full bg-stone-50 border border-stone-200 rounded-lg pl-7 pr-2.5 py-1.5 text-xs text-stone-800 focus:outline-none focus:border-indigo-400 focus:bg-white"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingFeedId(null)}
+                              className="px-2.5 py-1 border border-stone-200 text-stone-600 hover:bg-stone-50 rounded-lg text-xs font-medium transition"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveFeedEdit(s.id)}
+                              disabled={loading || !editFeedName.trim()}
+                              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Save Changes</span>
+                            </button>
+                          </div>
                         </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => handleSyncFeed(s.id)}
-                            disabled={syncingId === s.id}
-                            className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-200/60 rounded-lg transition"
-                            title="Sync Now"
-                          >
-                            <RefreshCw
-                              className={`w-3.5 h-3.5 ${syncingId === s.id ? 'animate-spin' : ''}`}
+                      ) : (
+                        <div
+                          key={s.id}
+                          className="flex items-center justify-between p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs shadow-2xs hover:border-stone-300 transition"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className="w-3 h-3 rounded-full shrink-0"
+                              style={{ backgroundColor: s.color }}
                             />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteFeed(s.id)}
-                            className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-stone-200/60 rounded-lg transition"
-                            title="Delete Feed"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <div>
+                              <div className="font-semibold text-stone-800">{s.name}</div>
+                              <div className="text-[10px] text-stone-500 truncate max-w-xs">
+                                {s.ics_url}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleSyncFeed(s.id)}
+                              disabled={syncingId === s.id}
+                              className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-200/60 rounded-lg transition"
+                              title="Sync Now"
+                            >
+                              <RefreshCw
+                                className={`w-3.5 h-3.5 ${syncingId === s.id ? 'animate-spin' : ''}`}
+                              />
+                            </button>
+                            <button
+                              onClick={() => handleStartEditFeed(s)}
+                              className="p-1.5 text-stone-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                              title="Edit Feed"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteFeed(s.id)}
+                              className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-stone-200/60 rounded-lg transition"
+                              title="Delete Feed"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      )
                     ))}
                   </div>
                 )}

@@ -844,6 +844,33 @@ export async function handleClientStorageRequest(
       saveClientDb(db);
       return newGhost;
     }
+    if (method === 'PATCH') {
+      const ghostId = path.split('/')[4];
+      const ghost = db.ghosts.find((g) => g.id === ghostId);
+      if (!ghost) {
+        throw new Error('Ghost not found.');
+      }
+      if (body.name !== undefined) {
+        ghost.name = body.name;
+        db.meetings.forEach((m) => {
+          if ((m as any).ghost_id === ghostId) {
+            m.ghost_name = body.name;
+          }
+        });
+      }
+      if (body.relation !== undefined) ghost.relation = body.relation;
+      if (body.color !== undefined) {
+        ghost.color = body.color;
+        db.meetings.forEach((m) => {
+          if ((m as any).ghost_id === ghostId) {
+            m.color = body.color;
+          }
+        });
+      }
+      if (body.ics_url !== undefined) ghost.ics_url = body.ics_url;
+      saveClientDb(db);
+      return ghost;
+    }
     if (method === 'DELETE') {
       const ghostId = path.split('/')[4];
       db.ghosts = db.ghosts.filter((g) => g.id !== ghostId);
@@ -875,6 +902,25 @@ export async function handleClientStorageRequest(
       db.calendars.push(newCal);
       saveClientDb(db);
       return newCal;
+    }
+    if (method === 'PATCH') {
+      const calId = path.split('/')[4];
+      const cal = (db.calendars || []).find((c) => c.id === calId);
+      if (!cal) {
+        throw new Error('Calendar not found.');
+      }
+      if (body.name !== undefined) cal.name = body.name;
+      if (body.color !== undefined) {
+        cal.color = body.color;
+        db.meetings.forEach((m) => {
+          if (m.source_id === calId) {
+            m.color = body.color;
+          }
+        });
+      }
+      if (body.ics_url !== undefined) cal.ics_url = body.ics_url;
+      saveClientDb(db);
+      return cal;
     }
     if (method === 'DELETE') {
       const calId = path.split('/')[4];

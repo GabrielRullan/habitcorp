@@ -313,6 +313,28 @@ describe('Cadence API Suite', () => {
     expect(ghostMeeting).toBeDefined();
     expect(ghostMeeting.title).toBe('Sarah Doctor Appointment');
 
+    // 3.5. Edit ghost (PATCH) and verify event ghost_name and color cascade
+    const patchGhostRes = await request(app)
+      .patch(`/api/v1/ghosts/${ghostId}`)
+      .set('X-API-Key', userA.apiKey)
+      .send({
+        name: 'Sarah Smith',
+        relation: 'Partner',
+        color: '#8b5cf6',
+      });
+    expect(patchGhostRes.status).toBe(200);
+    expect(patchGhostRes.body.name).toBe('Sarah Smith');
+    expect(patchGhostRes.body.relation).toBe('Partner');
+    expect(patchGhostRes.body.color).toBe('#8b5cf6');
+
+    // Verify cascade to agenda meeting
+    const updatedAgenda = await request(app)
+      .get('/api/v1/agenda?start=2026-10-28&end=2026-10-28')
+      .set('X-API-Key', userA.apiKey);
+    const updatedGhostEvent = updatedAgenda.body.meetings.find((m: any) => m.ghost_id === ghostId);
+    expect(updatedGhostEvent.ghost_name).toBe('Sarah Smith');
+    expect(updatedGhostEvent.color).toBe('#8b5cf6');
+
     // 4. Delete ghost -> cascades to meeting
     const delRes = await request(app)
       .delete(`/api/v1/ghosts/${ghostId}`)
