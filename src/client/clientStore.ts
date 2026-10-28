@@ -777,6 +777,18 @@ export async function handleClientStorageRequest(
       return { meetings: db.meetings };
     }
     if (method === 'POST') {
+      const rawGhostIds: string[] = Array.isArray(body.ghost_ids)
+        ? body.ghost_ids
+        : (body.ghost_id ? [body.ghost_id] : []);
+      const isGhost = (body.is_ghost || rawGhostIds.length > 0) ? 1 : 0;
+      let ghostName = body.ghost_name || '';
+      if (!ghostName && rawGhostIds.length > 0) {
+        const found = db.ghosts.filter((g) => rawGhostIds.includes(g.id));
+        if (found.length > 0) {
+          ghostName = found.map((g) => g.name).join(', ');
+        }
+      }
+
       const newMeet: CalendarMeeting = {
         id: 'meet_' + Math.random().toString(36).slice(2, 9),
         user_id: 'user_gabriel',
@@ -787,9 +799,11 @@ export async function handleClientStorageRequest(
         start_time: body.start_time || new Date().toISOString(),
         end_time: body.end_time || new Date().toISOString(),
         all_day: body.all_day || 0,
-        color: body.color || '#0ea5e9',
-        is_ghost: body.is_ghost || 0,
-        ghost_name: body.ghost_name || '',
+        color: body.color || (isGhost ? '#ec4899' : '#0ea5e9'),
+        is_ghost: isGhost,
+        ghost_id: rawGhostIds[0] || body.ghost_id || null,
+        ghost_ids: rawGhostIds,
+        ghost_name: ghostName,
         created_at: new Date().toISOString(),
       };
       db.meetings.push(newMeet);
@@ -813,6 +827,22 @@ export async function handleClientStorageRequest(
       if (body.is_ghost !== undefined) meet.is_ghost = body.is_ghost ? 1 : 0;
       if (body.ghost_name !== undefined) meet.ghost_name = body.ghost_name;
       if (body.ghost_id !== undefined) (meet as any).ghost_id = body.ghost_id;
+      if (body.ghost_ids !== undefined) {
+        const raw = Array.isArray(body.ghost_ids) ? body.ghost_ids : [];
+        meet.ghost_ids = raw;
+        if (body.ghost_id === undefined) {
+          meet.ghost_id = raw[0] || null;
+        }
+        if (body.is_ghost === undefined) {
+          meet.is_ghost = raw.length > 0 ? 1 : 0;
+        }
+        if (body.ghost_name === undefined && raw.length > 0) {
+          const found = db.ghosts.filter((g) => raw.includes(g.id));
+          if (found.length > 0) {
+            meet.ghost_name = found.map((g) => g.name).join(', ');
+          }
+        }
+      }
       saveClientDb(db);
       return meet;
     }
@@ -856,7 +886,7 @@ export async function handleClientStorageRequest(
       if (body.name !== undefined) {
         ghost.name = body.name;
         db.meetings.forEach((m) => {
-          if ((m as any).ghost_id === ghostId || m.ghost_name?.toLowerCase().includes(oldGhostName.toLowerCase())) {
+          if ((m as any).ghost_id === ghostId || m.ghost_ids?.includes(ghostId) || m.ghost_name?.toLowerCase().includes(oldGhostName.toLowerCase())) {
             m.ghost_name = body.name;
           }
         });
@@ -865,7 +895,7 @@ export async function handleClientStorageRequest(
       if (body.color !== undefined) {
         ghost.color = body.color;
         db.meetings.forEach((m) => {
-          if ((m as any).ghost_id === ghostId || m.ghost_name?.toLowerCase().includes(oldGhostName.toLowerCase())) {
+          if ((m as any).ghost_id === ghostId || m.ghost_ids?.includes(ghostId) || m.ghost_name?.toLowerCase().includes(oldGhostName.toLowerCase())) {
             m.color = body.color;
           }
         });
@@ -877,6 +907,14 @@ export async function handleClientStorageRequest(
     if (method === 'DELETE') {
       const ghostId = path.split('/')[4];
       db.ghosts = db.ghosts.filter((g) => g.id !== ghostId);
+      db.meetings = db.meetings.filter((m) => {
+        if (m.ghost_id === ghostId) return false;
+        if (m.ghost_ids?.includes(ghostId)) {
+          m.ghost_ids = m.ghost_ids.filter((id) => id !== ghostId);
+          if (m.ghost_ids.length === 0) return false;
+        }
+        return true;
+      });
       saveClientDb(db);
       return { success: true };
     }

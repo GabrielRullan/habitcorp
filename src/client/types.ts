@@ -74,6 +74,7 @@ export interface CalendarMeeting {
   user_id: string;
   source_id: string | null;
   ghost_id?: string | null;
+  ghost_ids?: string[];
   is_ghost?: number;
   ghost_name?: string;
   external_uid?: string;

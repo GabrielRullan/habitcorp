@@ -447,7 +447,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         // Ghost filtering logic
                         if (m.is_ghost) {
                           if (!showGhosts) return false;
-                          if (selectedGhostId !== 'all' && m.ghost_id !== selectedGhostId) return false;
+                          if (selectedGhostId !== 'all') {
+                            const gids = (m.ghost_ids && m.ghost_ids.length > 0)
+                              ? m.ghost_ids
+                              : (m.ghost_id ? [m.ghost_id] : []);
+                            if (!gids.includes(selectedGhostId)) return false;
+                          }
                         }
                         return true;
                       });
@@ -552,12 +557,45 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                       )}
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-1 text-[9px] text-pink-800/80 mt-0.5">
-                                    <span className="px-1 py-0.2 rounded font-medium bg-pink-100 text-pink-700 border border-pink-200">
-                                      {m.ghost_name || 'Ghost'}
-                                    </span>
+                                  <div className="flex items-center gap-1 text-[9px] text-pink-800/80 mt-0.5 flex-wrap">
+                                    {(() => {
+                                      const gids = (m.ghost_ids && m.ghost_ids.length > 0)
+                                        ? m.ghost_ids
+                                        : (m.ghost_id ? [m.ghost_id] : []);
+
+                                      if (gids.length > 0) {
+                                        return gids.map((gid) => {
+                                          const g = ghosts.find((gh) => gh.id === gid);
+                                          const gName = g?.name || m.ghost_name || 'Ghost';
+                                          const gColor = g?.color || '#ec4899';
+                                          return (
+                                            <span
+                                              key={gid}
+                                              className="px-1.5 py-0.2 rounded font-medium border text-[9px] flex items-center gap-1 shadow-2xs"
+                                              style={{
+                                                backgroundColor: `${gColor}18`,
+                                                borderColor: `${gColor}50`,
+                                                color: gColor,
+                                              }}
+                                            >
+                                              <span
+                                                className="w-1.5 h-1.5 rounded-full"
+                                                style={{ backgroundColor: gColor }}
+                                              />
+                                              <span>{gName}</span>
+                                            </span>
+                                          );
+                                        });
+                                      }
+
+                                      return (
+                                        <span className="px-1 py-0.2 rounded font-medium bg-pink-100 text-pink-700 border border-pink-200">
+                                          {m.ghost_name || 'Ghost'}
+                                        </span>
+                                      );
+                                    })()}
                                     {m.location && (
-                                      <span className="flex items-center gap-0.5 truncate text-stone-400">
+                                      <span className="flex items-center gap-0.5 truncate text-stone-400 ml-0.5">
                                         <MapPin className="w-2 h-2" />
                                         {m.location}
                                       </span>

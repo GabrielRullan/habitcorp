@@ -348,6 +348,59 @@ describe('Cadence API Suite', () => {
     expect(afterDel.body.meetings.some((m: any) => m.is_ghost === 1)).toBe(false);
   });
 
+  it('supports events with multiple ghosts and preserves association', async () => {
+    // 1. Create two Ghosts
+    const g1 = await request(app)
+      .post('/api/v1/ghosts')
+      .set('X-API-Key', userA.apiKey)
+      .send({ name: 'Leo', relation: 'Child', color: '#3b82f6' });
+    const g2 = await request(app)
+      .post('/api/v1/ghosts')
+      .set('X-API-Key', userA.apiKey)
+      .send({ name: 'Maya', relation: 'Child', color: '#10b981' });
+
+    expect(g1.status).toBe(201);
+    expect(g2.status).toBe(201);
+    const leoId = g1.body.id;
+    const mayaId = g2.body.id;
+
+    // 2. Create meeting with both ghosts
+    const meetRes = await request(app)
+      .post('/api/v1/meetings')
+      .set('X-API-Key', userA.apiKey)
+      .send({
+        title: 'Kids Swimming Practice',
+        start_time: '2026-10-28T16:00:00.000Z',
+        end_time: '2026-10-28T17:00:00.000Z',
+        ghost_ids: [leoId, mayaId],
+      });
+
+    expect(meetRes.status).toBe(201);
+    expect(meetRes.body.is_ghost).toBe(1);
+    expect(meetRes.body.ghost_ids).toContain(leoId);
+    expect(meetRes.body.ghost_ids).toContain(mayaId);
+    expect(meetRes.body.ghost_name).toContain('Leo');
+    expect(meetRes.body.ghost_name).toContain('Maya');
+
+    // 3. Query agenda and verify both ghost ids present
+    const agendaRes = await request(app)
+      .get('/api/v1/agenda?start=2026-10-28&end=2026-10-28')
+      .set('X-API-Key', userA.apiKey);
+    const swimMeeting = agendaRes.body.meetings.find((m: any) => m.title === 'Kids Swimming Practice');
+    expect(swimMeeting).toBeDefined();
+    expect(swimMeeting.ghost_ids).toEqual(expect.arrayContaining([leoId, mayaId]));
+
+    // 4. Update meeting to add / change ghosts
+    const patchRes = await request(app)
+      .patch(`/api/v1/meetings/${swimMeeting.id}`)
+      .set('X-API-Key', userA.apiKey)
+      .send({
+        ghost_ids: [mayaId],
+      });
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.ghost_ids).toEqual([mayaId]);
+  });
+
   it('manages projects and links habits & tasks together', async () => {
     // 1. Create a project "Chinese learning"
     const projRes = await request(app)

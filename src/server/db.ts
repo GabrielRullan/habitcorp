@@ -139,6 +139,7 @@ export function initSchema(db: DatabaseSync) {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       source_id TEXT REFERENCES calendar_sources(id) ON DELETE CASCADE,
       ghost_id TEXT REFERENCES ghosts(id) ON DELETE CASCADE,
+      ghost_ids TEXT DEFAULT '[]',
       is_ghost INTEGER NOT NULL DEFAULT 0,
       ghost_name TEXT DEFAULT '',
       external_uid TEXT,
@@ -201,6 +202,9 @@ export function initSchema(db: DatabaseSync) {
   } catch {}
   try {
     db.exec(`ALTER TABLE calendar_events ADD COLUMN ghost_name TEXT DEFAULT '';`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE calendar_events ADD COLUMN ghost_ids TEXT DEFAULT '[]';`);
   } catch {}
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_events_ghost ON calendar_events(user_id, is_ghost);`);

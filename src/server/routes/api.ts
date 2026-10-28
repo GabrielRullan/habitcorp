@@ -877,6 +877,26 @@ apiRouter.get('/agenda', (req, res) => {
   const startTimeIso = `${start}T00:00:00.000Z`;
   const endTimeIso = `${end}T23:59:59.999Z`;
 
+  function formatMeeting(m: any) {
+    if (!m) return m;
+    let ghost_ids: string[] = [];
+    if (Array.isArray(m.ghost_ids)) {
+      ghost_ids = m.ghost_ids;
+    } else if (typeof m.ghost_ids === 'string') {
+      try {
+        ghost_ids = JSON.parse(m.ghost_ids || '[]');
+      } catch {
+        ghost_ids = [];
+      }
+    } else if (m.ghost_id) {
+      ghost_ids = [m.ghost_id];
+    }
+    return {
+      ...m,
+      ghost_ids,
+    };
+  }
+
   const meetings = db.prepare(`
     SELECT * FROM calendar_events
     WHERE user_id = ? AND (
@@ -917,7 +937,7 @@ apiRouter.get('/agenda', (req, res) => {
 
   res.json({
     date_range: { start, end },
-    meetings,
+    meetings: (meetings as any[]).map(formatMeeting),
     scheduled_tasks: scheduledTasks,
     ghosts,
   });
@@ -938,8 +958,24 @@ apiRouter.get('/meetings', (req, res) => {
   }
 
   query += ' ORDER BY start_time ASC';
-  const meetings = db.prepare(query).all(...params);
-  res.json({ meetings });
+  const meetings = db.prepare(query).all(...params) as any[];
+  res.json({
+    meetings: meetings.map((m) => {
+      let ghost_ids: string[] = [];
+      if (Array.isArray(m.ghost_ids)) {
+        ghost_ids = m.ghost_ids;
+      } else if (typeof m.ghost_ids === 'string') {
+        try {
+          ghost_ids = JSON.parse(m.ghost_ids || '[]');
+        } catch {
+          ghost_ids = [];
+        }
+      } else if (m.ghost_id) {
+        ghost_ids = [m.ghost_id];
+      }
+      return { ...m, ghost_ids };
+    }),
+  });
 });
 
 apiRouter.post('/meetings', (req, res) => {
@@ -954,19 +990,31 @@ apiRouter.post('/meetings', (req, res) => {
 
   const meetingId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const isGhost = b.is_ghost ? 1 : 0;
-  const ghostId = b.ghost_id || null;
-  const ghostName = b.ghost_name || '';
+  const rawGhostIds: string[] = Array.isArray(b.ghost_ids)
+    ? b.ghost_ids
+    : (b.ghost_id ? [b.ghost_id] : []);
+  const isGhost = (b.is_ghost || rawGhostIds.length > 0) ? 1 : 0;
+  const ghostId = rawGhostIds[0] || b.ghost_id || null;
+  let ghostName = b.ghost_name || '';
+
+  if (rawGhostIds.length > 0 && !ghostName) {
+    const placeholders = rawGhostIds.map(() => '?').join(',');
+    const found = db.prepare(`SELECT name FROM ghosts WHERE id IN (${placeholders}) AND user_id = ?`).all(...rawGhostIds, userId) as any[];
+    if (found.length > 0) {
+      ghostName = found.map((g) => g.name).join(', ');
+    }
+  }
 
   db.prepare(`
     INSERT INTO calendar_events (
-      id, user_id, source_id, ghost_id, is_ghost, ghost_name, external_uid, title, description, location,
+      id, user_id, source_id, ghost_id, ghost_ids, is_ghost, ghost_name, external_uid, title, description, location,
       meeting_url, start_time, end_time, all_day, color, created_at
-    ) VALUES (?, ?, null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     meetingId,
     userId,
     ghostId,
+    JSON.stringify(rawGhostIds),
     isGhost,
     ghostName,
     crypto.randomUUID(),
@@ -981,8 +1029,12 @@ apiRouter.post('/meetings', (req, res) => {
     now
   );
 
-  const created = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(meetingId);
-  res.status(201).json(created);
+  const created = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(meetingId) as any;
+  let parsedGhostIds: string[] = [];
+  try {
+    parsedGhostIds = JSON.parse(created.ghost_ids || '[]');
+  } catch {}
+  res.status(201).json({ ...created, ghost_ids: parsedGhostIds });
 });
 
 apiRouter.patch('/meetings/:id', (req, res) => {
@@ -1010,13 +1062,56 @@ apiRouter.patch('/meetings/:id', (req, res) => {
     values.push(b.all_day ? 1 : 0);
   }
 
+  if (b.ghost_ids !== undefined) {
+    const rawGhostIds: string[] = Array.isArray(b.ghost_ids) ? b.ghost_ids : [];
+    updates.push('ghost_ids = ?');
+    values.push(JSON.stringify(rawGhostIds));
+    if (b.ghost_id === undefined) {
+      updates.push('ghost_id = ?');
+      values.push(rawGhostIds[0] || null);
+    }
+    if (b.is_ghost === undefined) {
+      updates.push('is_ghost = ?');
+      values.push(rawGhostIds.length > 0 ? 1 : 0);
+    }
+    if (b.ghost_name === undefined && rawGhostIds.length > 0) {
+      const placeholders = rawGhostIds.map(() => '?').join(',');
+      const found = db.prepare(`SELECT name FROM ghosts WHERE id IN (${placeholders}) AND user_id = ?`).all(...rawGhostIds, userId) as any[];
+      if (found.length > 0) {
+        updates.push('ghost_name = ?');
+        values.push(found.map((g) => g.name).join(', '));
+      }
+    } else if (rawGhostIds.length === 0 && b.ghost_name === undefined) {
+      updates.push('ghost_name = ?');
+      values.push('');
+    }
+  } else if (b.ghost_id !== undefined) {
+    updates.push('ghost_id = ?');
+    values.push(b.ghost_id);
+    updates.push('ghost_ids = ?');
+    values.push(JSON.stringify(b.ghost_id ? [b.ghost_id] : []));
+  }
+
+  if (b.is_ghost !== undefined && b.ghost_ids === undefined) {
+    updates.push('is_ghost = ?');
+    values.push(b.is_ghost ? 1 : 0);
+  }
+  if (b.ghost_name !== undefined) {
+    updates.push('ghost_name = ?');
+    values.push(b.ghost_name);
+  }
+
   if (updates.length > 0) {
     values.push(req.params.id, userId);
     db.prepare(`UPDATE calendar_events SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`).run(...values);
   }
 
-  const updated = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
-  res.json(updated);
+  const updated = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id) as any;
+  let parsedGhostIds: string[] = [];
+  try {
+    parsedGhostIds = JSON.parse(updated.ghost_ids || '[]');
+  } catch {}
+  res.json({ ...updated, ghost_ids: parsedGhostIds });
 });
 
 apiRouter.delete('/meetings/:id', (req, res) => {
@@ -1238,10 +1333,10 @@ apiRouter.patch('/ghosts/:id', async (req, res) => {
   }
 
   if (b.name !== undefined) {
-    db.prepare('UPDATE calendar_events SET ghost_name = ? WHERE ghost_id = ? AND user_id = ?').run(b.name, req.params.id, userId);
+    db.prepare('UPDATE calendar_events SET ghost_name = ? WHERE (ghost_id = ? OR ghost_ids LIKE ?) AND user_id = ?').run(b.name, req.params.id, `%"${req.params.id}"%`, userId);
   }
   if (b.color !== undefined) {
-    db.prepare('UPDATE calendar_events SET color = ? WHERE ghost_id = ? AND user_id = ?').run(b.color, req.params.id, userId);
+    db.prepare('UPDATE calendar_events SET color = ? WHERE (ghost_id = ? OR ghost_ids LIKE ?) AND user_id = ?').run(b.color, req.params.id, `%"${req.params.id}"%`, userId);
   }
 
   const updated = db.prepare('SELECT * FROM ghosts WHERE id = ?').get(req.params.id);
@@ -1283,14 +1378,30 @@ apiRouter.post('/ghosts/:id/sync', async (req, res) => {
 
 apiRouter.delete('/ghosts/:id', (req, res) => {
   const db = getDb();
-  // Delete ghost events first
+  const userId = req.user!.id;
+  // Delete ghost events where this was the sole ghost
   db.prepare('DELETE FROM calendar_events WHERE ghost_id = ? AND user_id = ?').run(
     req.params.id,
-    req.user!.id
+    userId
   );
+
+  // For multi-ghost events, filter out this ghost id or delete if none left
+  const multiGhostEvents = db.prepare(`SELECT id, ghost_ids FROM calendar_events WHERE ghost_ids LIKE ? AND user_id = ?`).all(`%"${req.params.id}"%`, userId) as any[];
+  for (const m of multiGhostEvents) {
+    try {
+      const gids: string[] = JSON.parse(m.ghost_ids || '[]');
+      const filtered = gids.filter((id) => id !== req.params.id);
+      if (filtered.length === 0) {
+        db.prepare('DELETE FROM calendar_events WHERE id = ?').run(m.id);
+      } else {
+        db.prepare('UPDATE calendar_events SET ghost_ids = ?, ghost_id = ? WHERE id = ?').run(JSON.stringify(filtered), filtered[0], m.id);
+      }
+    } catch {}
+  }
+
   const result = db.prepare('DELETE FROM ghosts WHERE id = ? AND user_id = ?').run(
     req.params.id,
-    req.user!.id
+    userId
   );
   if (result.changes === 0) {
     res.status(404).json({ error: 'Ghost not found.' });

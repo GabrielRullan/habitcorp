@@ -28,6 +28,7 @@ interface MeetingModalProps {
     color?: string;
     is_ghost?: number;
     ghost_id?: string;
+    ghost_ids?: string[];
   }) => Promise<void>;
   onDelete?: (meetingId: string) => Promise<void>;
   initialMeeting?: CalendarMeeting | null;
@@ -69,9 +70,9 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
   const [allDay, setAllDay] = useState(false);
   const [color, setColor] = useState('#6366f1');
 
-  // Ghost / Family state
+  // Ghost / Family state (Multiple ghosts support)
   const [isGhost, setIsGhost] = useState(false);
-  const [selectedGhostId, setSelectedGhostId] = useState<string>('');
+  const [selectedGhostIds, setSelectedGhostIds] = useState<string[]>([]);
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -105,7 +106,10 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
       setAllDay(Boolean(initialMeeting.all_day));
       setColor(initialMeeting.color || (initialMeeting.is_ghost ? '#ec4899' : '#6366f1'));
       setIsGhost(Boolean(initialMeeting.is_ghost));
-      setSelectedGhostId(initialMeeting.ghost_id || '');
+      const initialGids = (initialMeeting.ghost_ids && initialMeeting.ghost_ids.length > 0)
+        ? initialMeeting.ghost_ids
+        : (initialMeeting.ghost_id ? [initialMeeting.ghost_id] : []);
+      setSelectedGhostIds(initialGids);
     } else {
       setTitle('');
       setDescription('');
@@ -123,7 +127,7 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
       setAllDay(false);
       setColor('#6366f1');
       setIsGhost(false);
-      setSelectedGhostId(ghosts.length > 0 ? ghosts[0].id : '');
+      setSelectedGhostIds([]);
     }
     setConfirmDelete(false);
   }, [initialMeeting, defaultDate, defaultStartTime, isOpen, ghosts]);
@@ -158,8 +162,9 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
         end_time: endIso,
         all_day: allDay ? 1 : 0,
         color,
-        is_ghost: isGhost ? 1 : 0,
-        ghost_id: isGhost && selectedGhostId ? selectedGhostId : undefined,
+        is_ghost: (isGhost || selectedGhostIds.length > 0) ? 1 : 0,
+        ghost_id: selectedGhostIds[0] || undefined,
+        ghost_ids: selectedGhostIds,
       });
       onClose();
     } catch (err) {
@@ -388,16 +393,19 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
           </div>
 
           {/* Family / Ghost Association */}
-          <div className="p-3.5 bg-stone-50/80 border border-stone-200 rounded-xl space-y-2">
+          <div className="p-3.5 bg-stone-50/80 border border-stone-200 rounded-xl space-y-2.5">
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-xs font-semibold text-stone-700 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={isGhost}
+                  checked={isGhost || selectedGhostIds.length > 0}
                   onChange={(e) => {
-                    setIsGhost(e.target.checked);
-                    if (e.target.checked && !selectedGhostId && ghosts.length > 0) {
-                      setSelectedGhostId(ghosts[0].id);
+                    const checked = e.target.checked;
+                    setIsGhost(checked);
+                    if (checked && selectedGhostIds.length === 0 && ghosts.length > 0) {
+                      setSelectedGhostIds([ghosts[0].id]);
+                    } else if (!checked) {
+                      setSelectedGhostIds([]);
                     }
                   }}
                   className="w-4 h-4 rounded text-pink-600 focus:ring-pink-500 border-stone-300"
@@ -407,29 +415,69 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
                   <span>Family / Ghost Calendar Event</span>
                 </span>
               </label>
-              {isGhost && (
+              {(isGhost || selectedGhostIds.length > 0) && (
                 <span className="text-[10px] text-pink-600 bg-pink-50 border border-pink-200 px-1.5 py-0.5 rounded font-medium">
-                  Pastel Outline
+                  {selectedGhostIds.length > 1 ? `${selectedGhostIds.length} Ghosts Attached` : 'Pastel Outline'}
                 </span>
               )}
             </div>
 
-            {isGhost && (
-              <div className="pt-1.5">
-                <label className="block text-[11px] text-stone-500 mb-1">Assigned Contact / Child:</label>
+            {(isGhost || selectedGhostIds.length > 0) && (
+              <div className="pt-1 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-stone-500">
+                  <span>Assigned Ghosts / Contacts (select multiple):</span>
+                  <span className="text-[10px] text-stone-400 font-mono">
+                    {selectedGhostIds.length} selected
+                  </span>
+                </div>
+
                 {ghosts.length > 0 ? (
-                  <select
-                    value={selectedGhostId}
-                    onChange={(e) => setSelectedGhostId(e.target.value)}
-                    className="w-full bg-white border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-800 focus:outline-none focus:border-pink-400"
-                  >
-                    <option value="">None / General Family</option>
-                    {ghosts.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name} ({g.relation || 'Contact'})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ghosts.map((g) => {
+                      const isSelected = selectedGhostIds.includes(g.id);
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedGhostIds((prev) => {
+                              const next = isSelected
+                                ? prev.filter((id) => id !== g.id)
+                                : [...prev, g.id];
+                              if (next.length > 0) setIsGhost(true);
+                              return next;
+                            });
+                          }}
+                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition ${
+                            isSelected
+                              ? 'shadow-xs font-semibold'
+                              : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                          }`}
+                          style={
+                            isSelected
+                              ? {
+                                  backgroundColor: `${g.color}18`,
+                                  borderColor: `${g.color}60`,
+                                  color: g.color,
+                                }
+                              : undefined
+                          }
+                        >
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: g.color }}
+                          />
+                          <span>{g.name}</span>
+                          {g.relation && (
+                            <span className="text-[10px] opacity-75 font-normal">
+                              ({g.relation})
+                            </span>
+                          )}
+                          {isSelected && <Check className="w-3 h-3 ml-0.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <p className="text-[11px] text-stone-400 italic">
                     No ghost contacts configured yet. Configure them in Calendar & Feeds.
