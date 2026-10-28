@@ -42,6 +42,36 @@ describe('Cadence API Suite', () => {
     expect(loginRes.body.apiKey).toBe(userA.apiKey);
   });
 
+  it('authenticates and creates accounts passwordlessly via Magic Links', async () => {
+    // 1. Request magic link for new user without password
+    const linkRes = await request(app)
+      .post('/api/v1/auth/magic-link')
+      .send({ email: 'carol@example.com' });
+
+    expect(linkRes.status).toBe(200);
+    expect(linkRes.body.ok).toBe(true);
+    expect(linkRes.body.token).toMatch(/^ml_/);
+    expect(linkRes.body.user.username).toBe('carol');
+    const token = linkRes.body.token;
+
+    // 2. Verify magic link -> logs in and provides apiKey
+    const verifyRes = await request(app)
+      .post('/api/v1/auth/verify-magic-link')
+      .send({ token });
+
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.ok).toBe(true);
+    expect(verifyRes.body.username).toBe('carol');
+    expect(verifyRes.body.apiKey).toMatch(/^tk_/);
+
+    // 3. Replay attack prevention: Same token cannot be used twice
+    const replayRes = await request(app)
+      .post('/api/v1/auth/verify-magic-link')
+      .send({ token });
+    expect(replayRes.status).toBe(400);
+    expect(replayRes.body.error).toMatch(/already been used/);
+  });
+
   it('enforces multi-user isolation on tasks', async () => {
     // User A creates a task
     const createRes = await request(app)

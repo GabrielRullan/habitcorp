@@ -34,6 +34,9 @@ import {
   Sun,
   Briefcase,
   Moon,
+  User,
+  LogOut,
+  ChevronDown,
 } from 'lucide-react';
 import { TaskModal } from './components/TaskModal';
 import { AgendaView } from './components/AgendaView';
@@ -91,6 +94,8 @@ export const App: React.FC = () => {
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
   const [agentModalOpen, setAgentModalOpen] = useState(false);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   // New Project Form
   const [newProjectName, setNewProjectName] = useState('');
@@ -103,8 +108,62 @@ export const App: React.FC = () => {
 
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
-  // Sync test user and fetch initial data
+  const handleAuthSuccess = (newAuth: AuthState) => {
+    setAuth(newAuth);
+    try {
+      localStorage.setItem('habitcorp_auth', JSON.stringify(newAuth));
+    } catch {}
+    setAuthModalOpen(false);
+    setUserMenuOpen(false);
+  };
+
+  const handleLogout = () => {
+    setAuth(null);
+    try {
+      localStorage.removeItem('habitcorp_auth');
+    } catch {}
+    setUserMenuOpen(false);
+    setAuthModalOpen(true);
+  };
+
+  // Sync test user or magic link token on mount
   useEffect(() => {
+    // 1. Check if user arrived via a Magic Link URL: /?magic_token=...
+    const params = new URLSearchParams(window.location.search);
+    const magicToken = params.get('magic_token');
+
+    if (magicToken) {
+      window.history.replaceState({}, '', window.location.pathname);
+      fetch('/api/v1/auth/verify-magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: magicToken }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.apiKey) {
+            handleAuthSuccess(data);
+          } else {
+            setAuthModalOpen(true);
+          }
+        })
+        .catch(() => setAuthModalOpen(true));
+      return;
+    }
+
+    // 2. Check stored session
+    try {
+      const saved = localStorage.getItem('habitcorp_auth');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.apiKey) {
+          setAuth(parsed);
+          return;
+        }
+      }
+    } catch {}
+
+    // 3. Fallback to default user for preview
     fetch('/api/v1/auth/default-user')
       .then((r) => r.json())
       .then((data) => {
@@ -776,14 +835,71 @@ export const App: React.FC = () => {
               <span className="hidden sm:inline">Agent API</span>
             </button>
 
-            {auth && (
-              <>
-                <div className="h-4 w-px bg-stone-200 mx-1" />
-                <div className="flex items-center gap-1.5 text-xs bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200">
+            {auth ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="flex items-center gap-1.5 text-xs bg-stone-100 hover:bg-stone-200 px-2.5 py-1 rounded-xl border border-stone-200 transition"
+                  title="Account menu"
+                >
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-stone-600 font-mono text-[11px]">@{auth.username}</span>
-                </div>
-              </>
+                  <span className="text-stone-700 font-mono text-[11px] font-semibold">@{auth.username}</span>
+                  <ChevronDown className="w-3 h-3 text-stone-400" />
+                </button>
+
+                {/* User Dropdown Menu */}
+                {userMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white border border-stone-200 rounded-2xl p-2 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 text-xs">
+                    <div className="px-3 py-2 border-b border-stone-100 mb-1">
+                      <p className="font-bold text-stone-900 truncate">@{auth.username}</p>
+                      {auth.email && <p className="text-[11px] text-stone-400 truncate">{auth.email}</p>}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        setAuthModalOpen(true);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-xl text-stone-700 hover:bg-stone-100 flex items-center gap-2 transition"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Switch Account (Magic Link)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        setAgentModalOpen(true);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-xl text-stone-700 hover:bg-stone-100 flex items-center gap-2 transition"
+                    >
+                      <Bot className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Agent API Key</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full text-left px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition mt-1 border-t border-stone-100"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Log Out</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAuthModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-2xs transition"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Log In / Sign Up</span>
+              </button>
             )}
           </div>
         </div>
@@ -1096,6 +1212,15 @@ export const App: React.FC = () => {
         apiKey={auth?.apiKey || ''}
         onRegenerateKey={async () => auth?.apiKey || ''}
       />
+
+      {/* Auth Modal (Passwordless Magic Link, Account Creation & Login) */}
+      {(authModalOpen || !auth) && (
+        <AuthModal
+          onSuccess={handleAuthSuccess}
+          onClose={() => setAuthModalOpen(false)}
+          canClose={!!auth}
+        />
+      )}
 
       {/* Project Management Modal */}
       {projectModalOpen && (

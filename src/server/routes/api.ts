@@ -109,6 +109,130 @@ apiRouter.post('/auth/seed-routines', (req, res) => {
   res.json({ ok: true, message: 'Seeded Gabriel routines for testuser' });
 });
 
+// Passwordless Magic Link Login & Instant Account Creation
+apiRouter.post('/auth/magic-link', (req, res) => {
+  const { email } = req.body || {};
+  if (!email || typeof email !== 'string') {
+    res.status(400).json({ error: 'Valid email address or identifier is required.' });
+    return;
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const db = getDb();
+
+  // Find user by email or username
+  let user = db
+    .prepare('SELECT id, username, email, api_key FROM users WHERE email = ? OR username = ?')
+    .get(cleanEmail, cleanEmail) as any;
+
+  // If user does not exist, auto-create account passwordlessly!
+  if (!user) {
+    const userId = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    // Default username from email (e.g. alex@example.com -> alex)
+    let baseUsername = cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail;
+    baseUsername = baseUsername.replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'user';
+
+    // Ensure uniqueness
+    let finalUsername = baseUsername;
+    let suffix = 1;
+    while (db.prepare('SELECT id FROM users WHERE username = ?').get(finalUsername)) {
+      finalUsername = `${baseUsername}${suffix++}`;
+    }
+
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO users (id, username, email, password_hash, api_key, created_at)
+      VALUES (?, ?, ?, '', ?, ?)
+    `).run(userId, finalUsername, cleanEmail.includes('@') ? cleanEmail : null, apiKey, now);
+
+    user = { id: userId, username: finalUsername, email: cleanEmail, api_key: apiKey };
+  }
+
+  // Generate secure 15-minute token
+  const token = `ml_${crypto.randomBytes(24).toString('hex')}`;
+  const linkId = crypto.randomUUID();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+
+  db.prepare(`
+    INSERT INTO magic_links (id, user_id, token, email, expires_at, used, created_at)
+    VALUES (?, ?, ?, ?, ?, 0, ?)
+  `).run(linkId, user.id, token, cleanEmail, expiresAt, now.toISOString());
+
+  const magicUrl = `/?magic_token=${token}`;
+  console.log(`\n======================================================`);
+  console.log(`🔑 [Magic Link] Sign-in link for ${user.username} (${cleanEmail}):`);
+  console.log(`🔗 Token: ${token}`);
+  console.log(`🔗 URL:   ${magicUrl}`);
+  console.log(`======================================================\n`);
+
+  res.json({
+    ok: true,
+    message: 'Magic login link generated successfully.',
+    token,
+    url: magicUrl,
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+    },
+  });
+});
+
+apiRouter.post('/auth/verify-magic-link', (req, res) => {
+  const { token } = req.body || {};
+  if (!token || typeof token !== 'string') {
+    res.status(400).json({ error: 'Magic link token required.' });
+    return;
+  }
+
+  const cleanToken = token.trim();
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  const record = db
+    .prepare(`
+    SELECT id, user_id, token, expires_at, used
+    FROM magic_links
+    WHERE token = ?
+  `)
+    .get(cleanToken) as any;
+
+  if (!record) {
+    res.status(400).json({ error: 'Invalid or unrecognized magic link.' });
+    return;
+  }
+
+  if (record.used === 1) {
+    res.status(400).json({ error: 'This magic link has already been used.' });
+    return;
+  }
+
+  if (record.expires_at < now) {
+    res.status(400).json({ error: 'This magic link has expired. Please request a new one.' });
+    return;
+  }
+
+  // Mark token as used
+  db.prepare('UPDATE magic_links SET used = 1 WHERE id = ?').run(record.id);
+
+  // Fetch user
+  const user = db.prepare('SELECT id, username, email, api_key FROM users WHERE id = ?').get(record.user_id) as any;
+  if (!user) {
+    res.status(404).json({ error: 'User account not found.' });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    apiKey: user.api_key,
+  });
+});
+
 // All following routes require authentication (via X-API-Key or Bearer token)
 apiRouter.use(authMiddleware);
 

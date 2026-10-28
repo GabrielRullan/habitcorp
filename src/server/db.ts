@@ -43,7 +43,8 @@ export function initSchema(db: DatabaseSync) {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
+      email TEXT UNIQUE,
+      password_hash TEXT DEFAULT '',
       api_key TEXT UNIQUE NOT NULL,
       last_rollover_date TEXT,
       created_at TEXT NOT NULL
@@ -160,14 +161,31 @@ export function initSchema(db: DatabaseSync) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS magic_links (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT UNIQUE NOT NULL,
+      email TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(user_id, scheduled_date);
     CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id);
     CREATE INDEX IF NOT EXISTS idx_events_user_time ON calendar_events(user_id, start_time, end_time);
     CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
+    CREATE INDEX IF NOT EXISTS idx_magic_links_token ON magic_links(token);
   `);
 
   // Safe migrations for existing SQLite databases
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN email TEXT;`);
+  } catch {}
+  try {
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
+  } catch {}
   try {
     db.exec(`ALTER TABLE tasks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL;`);
   } catch {}

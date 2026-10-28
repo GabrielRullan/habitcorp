@@ -5,6 +5,7 @@ import { getDb } from './db.js';
 export interface AuthUser {
   id: string;
   username: string;
+  email?: string;
   api_key: string;
 }
 
@@ -55,7 +56,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
 
   const db = getDb();
   const row = db
-    .prepare('SELECT id, username, api_key FROM users WHERE api_key = ?')
+    .prepare('SELECT id, username, email, api_key FROM users WHERE api_key = ?')
     .get(token) as AuthUser | undefined;
 
   if (!row) {

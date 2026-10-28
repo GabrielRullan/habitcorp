@@ -123,5 +123,6 @@ export interface Project {
 export interface AuthState {
   id: string;
   username: string;
+  email?: string;
   apiKey: string;
 }
