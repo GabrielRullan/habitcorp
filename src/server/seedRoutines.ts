@@ -11,8 +11,6 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
-  const sfx = userId === 'user_test_default' ? '' : `_${userId}`;
-  const uid = (base: string) => `${base}${sfx}`;
 
   // Helper to compute date offset
   const getDateOffset = (offsetDays: number) => {
@@ -23,12 +21,12 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
 
   // 1. PROJECTS
   const projects = [
-    { id: uid('proj_chinese'), name: '🇨🇳 Chinese Acquisition (HSK 4)', color: '#ec4899', icon: 'languages' },
-    { id: uid('proj_japanese'), name: '🇯🇵 Japanese Study (JLPT N5)', color: '#8b5cf6', icon: 'languages' },
-    { id: uid('proj_health'), name: '💪 Health & Fitness (SBS & Running)', color: '#10b981', icon: 'activity' },
-    { id: uid('proj_corp'), name: '💼 Enterprise Architecture & Governance', color: '#0ea5e9', icon: 'building' },
-    { id: uid('proj_unicorn'), name: '🦄 Unicorn Venture (P011/P012)', color: '#f59e0b', icon: 'sparkles' },
-    { id: uid('proj_family'), name: '👨‍👩‍👧‍👦 Family & Logistics', color: '#a855f7', icon: 'home' },
+    { id: 'proj_chinese', name: '🇨🇳 Chinese Acquisition (HSK 4)', color: '#ec4899', icon: 'languages' },
+    { id: 'proj_japanese', name: '🇯🇵 Japanese Study (JLPT N5)', color: '#8b5cf6', icon: 'languages' },
+    { id: 'proj_health', name: '💪 Health & Fitness (SBS & Running)', color: '#10b981', icon: 'activity' },
+    { id: 'proj_corp', name: '💼 Enterprise Architecture & Governance', color: '#0ea5e9', icon: 'building' },
+    { id: 'proj_unicorn', name: '🦄 Unicorn Venture (P011/P012)', color: '#f59e0b', icon: 'sparkles' },
+    { id: 'proj_family', name: '👨‍👩‍👧‍👦 Family & Logistics', color: '#a855f7', icon: 'home' },
   ];
 
   const insertProj = db.prepare(`
@@ -41,10 +39,10 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
 
   // 2. GHOSTS (Family Members)
   const ghosts = [
-    { id: uid('ghost_alex'), name: 'Alex', relation: 'Partner / Spouse', color: '#ec4899' },
-    { id: uid('ghost_sam'), name: 'Sam', relation: 'Child (Piano/Language/Sports)', color: '#3b82f6' },
-    { id: uid('ghost_taylor'), name: 'Taylor', relation: 'Child (Drums/Karate/Music)', color: '#f97316' },
-    { id: uid('ghost_jordan'), name: 'Jordan', relation: 'Child (Acrobatics/Violin)', color: '#14b8a6' },
+    { id: 'ghost_alex', name: 'Alex', relation: 'Partner / Spouse', color: '#ec4899' },
+    { id: 'ghost_sam', name: 'Sam', relation: 'Child (Piano/Language/Sports)', color: '#3b82f6' },
+    { id: 'ghost_taylor', name: 'Taylor', relation: 'Child (Drums/Karate/Music)', color: '#f97316' },
+    { id: 'ghost_jordan', name: 'Jordan', relation: 'Child (Acrobatics/Violin)', color: '#14b8a6' },
   ];
 
   const insertGhost = db.prepare(`
@@ -99,12 +97,10 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     schedDuration?: number;
     subtasks?: string[];
   }) => {
-    const taskId = uid(data.id);
-    const projId = data.projectId ? uid(data.projectId) : null;
     insertTaskStmt.run(
-      taskId,
+      data.id,
       userId,
-      projId,
+      data.projectId || null,
       data.type,
       data.time_of_day || 'anytime',
       data.title,
@@ -130,7 +126,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
 
     if (data.subtasks && data.subtasks.length > 0) {
       data.subtasks.forEach((st, idx) => {
-        insertSubStmt.run(crypto.randomUUID(), taskId, st, idx);
+        insertSubStmt.run(crypto.randomUUID(), data.id, st, idx);
       });
     }
   };
@@ -431,9 +427,9 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     description?: string;
   }) => {
     insertEvent.run(
-      uid(data.id),
+      data.id,
       userId,
-      data.ghostId ? uid(data.ghostId) : null,
+      data.ghostId || null,
       data.isGhost ? 1 : 0,
       data.ghostName || '',
       data.title,

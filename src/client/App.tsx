@@ -48,8 +48,12 @@ import { HabitCorpIcon } from './components/HabitCorpIcon';
 import { FocusPacingBar } from './components/FocusPacingBar';
 import { PomodoroTimer } from './components/PomodoroTimer';
 import { fetchJson } from './apiHelper';
+import { useTranslation } from './i18n/I18nContext';
+import { LanguagePicker } from './components/LanguagePicker';
 
 export const App: React.FC = () => {
+  const { t, formatDate } = useTranslation();
+
   // Current user state (auto-logs into @testuser for frictionless local testing)
   const [auth, setAuth] = useState<AuthState | null>(null);
 
@@ -766,9 +770,9 @@ export const App: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-stone-900 tracking-tight">HabitCorp</h1>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 font-medium">
-                  The boring cousin of Habitica
+                <h1 className="text-base font-bold text-stone-900 tracking-tight">{t.brandName}</h1>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 font-medium hidden sm:inline">
+                  {t.tagline}
                 </span>
               </div>
             </div>
@@ -785,7 +789,7 @@ export const App: React.FC = () => {
               }`}
             >
               <Columns className="w-3.5 h-3.5" />
-              <span>Habits + Tasks</span>
+              <span>{t.viewHabitsTasks}</span>
             </button>
             <button
               onClick={() => setViewMode('tasks_agenda')}
@@ -796,7 +800,7 @@ export const App: React.FC = () => {
               }`}
             >
               <LayoutGrid className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="font-semibold text-indigo-950">Tasks + Agenda</span>
+              <span className="font-semibold text-indigo-950">{t.viewTasksAgenda}</span>
             </button>
             <button
               onClick={() => setViewMode('agenda')}
@@ -807,7 +811,7 @@ export const App: React.FC = () => {
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>Agenda Grid</span>
+              <span>{t.viewAgendaGrid}</span>
             </button>
           </div>
 
@@ -820,7 +824,7 @@ export const App: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search..."
+                placeholder={t.searchPlaceholder}
                 className="bg-stone-50 hover:bg-stone-100 focus:bg-white border border-stone-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-400 w-32 sm:w-48 shadow-2xs transition"
               />
             </div>
@@ -835,7 +839,7 @@ export const App: React.FC = () => {
               className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add</span>
+              <span>{t.addBtn}</span>
             </button>
 
             <button
@@ -845,16 +849,16 @@ export const App: React.FC = () => {
                   ? 'bg-rose-50 border-rose-200 text-rose-800 font-semibold'
                   : 'bg-stone-100 hover:bg-stone-200 text-stone-700 border-stone-200'
               }`}
-              title="Toggle Pomodoro Timer"
+              title={t.pomodoroBtn}
             >
               <span>🍅</span>
-              <span className="hidden sm:inline">Pomodoro</span>
+              <span className="hidden sm:inline">{t.pomodoroBtn}</span>
             </button>
 
             <button
               onClick={() => setCalendarModalOpen(true)}
               className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl text-xs transition border border-stone-200"
-              title="Calendars & Ghosts"
+              title={t.calendarsGhostsBtn}
             >
               <CalendarDays className="w-4 h-4" />
             </button>
@@ -862,11 +866,14 @@ export const App: React.FC = () => {
             <button
               onClick={() => setAgentModalOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-indigo-700 rounded-xl text-xs font-medium transition border border-stone-200"
-              title="Agent API Key"
+              title={t.agentApiBtn}
             >
               <Bot className="w-4 h-4 text-indigo-600" />
-              <span className="hidden sm:inline">Agent API</span>
+              <span className="hidden sm:inline">{t.agentApiBtn}</span>
             </button>
+
+            {/* Language Switcher */}
+            <LanguagePicker />
 
             {auth ? (
               <div className="relative">
@@ -898,7 +905,7 @@ export const App: React.FC = () => {
                       className="w-full text-left px-3 py-2 rounded-xl text-stone-700 hover:bg-stone-100 flex items-center gap-2 transition"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-rose-500" />
-                      <span>Switch Account (Magic Link)</span>
+                      <span>{t.switchAccount}</span>
                     </button>
 
                     <button
@@ -910,7 +917,7 @@ export const App: React.FC = () => {
                       className="w-full text-left px-3 py-2 rounded-xl text-stone-700 hover:bg-stone-100 flex items-center gap-2 transition"
                     >
                       <Bot className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>Agent API Key</span>
+                      <span>{t.agentApiBtn}</span>
                     </button>
 
                     <button
@@ -919,7 +926,7 @@ export const App: React.FC = () => {
                       className="w-full text-left px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition mt-1 border-t border-stone-100"
                     >
                       <LogOut className="w-3.5 h-3.5" />
-                      <span>Log Out</span>
+                      <span>{t.logOut}</span>
                     </button>
                   </div>
                 )}
@@ -931,7 +938,7 @@ export const App: React.FC = () => {
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-2xs transition"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Log In / Sign Up</span>
+                <span>{t.logInSignUp}</span>
               </button>
             )}
           </div>
@@ -955,7 +962,7 @@ export const App: React.FC = () => {
           <div className="flex items-center gap-1.5 text-xs">
             <span className="font-semibold text-stone-400 uppercase tracking-wider text-[10px] flex items-center gap-1 mr-1 shrink-0">
               <Folder className="w-3 h-3 text-stone-400" />
-              <span>Projects:</span>
+              <span>{t.projectsLabel}</span>
             </span>
 
             <button
@@ -966,7 +973,7 @@ export const App: React.FC = () => {
                   : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
               }`}
             >
-              All Projects ({tasks.length})
+              {t.allProjects} ({tasks.length})
             </button>
 
             {projects.map((p) => {
@@ -1007,7 +1014,7 @@ export const App: React.FC = () => {
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium border border-dashed border-stone-300 text-stone-500 hover:text-indigo-600 hover:border-indigo-300 bg-white hover:bg-indigo-50/40 text-xs transition shrink-0"
             >
               <Plus className="w-3 h-3" />
-              <span>New Project</span>
+              <span>{t.newProjectBtn}</span>
             </button>
           </div>
         </div>
@@ -1481,7 +1488,7 @@ export const App: React.FC = () => {
                 }`}
                 title={habitTab === 'due_today' ? 'Showing Due Today. Click for all.' : 'Filter to Due Today'}
               >
-                Due Today
+                {t.subtabDueToday}
               </button>
 
               {/* Add Habit modal button */}
@@ -1509,7 +1516,7 @@ export const App: React.FC = () => {
                   : 'text-stone-500 border-transparent hover:bg-stone-100 hover:text-stone-700'
               }`}
             >
-              <span>All</span>
+              <span>{t.subtabAll}</span>
               <span className="text-[9px] opacity-75 font-mono">({habitCounts.all})</span>
             </button>
 
@@ -1522,7 +1529,7 @@ export const App: React.FC = () => {
               }`}
             >
               <Sun className="w-3 h-3 text-amber-500" />
-              <span>Morning</span>
+              <span>{t.timeFilterMorning}</span>
               <span className="text-[9px] opacity-75 font-mono">({habitCounts.morning})</span>
             </button>
 
@@ -1535,7 +1542,7 @@ export const App: React.FC = () => {
               }`}
             >
               <Briefcase className="w-3 h-3 text-blue-500" />
-              <span>Workday</span>
+              <span>{t.timeFilterWorkday}</span>
               <span className="text-[9px] opacity-75 font-mono">({habitCounts.workday})</span>
             </button>
 
@@ -1548,7 +1555,7 @@ export const App: React.FC = () => {
               }`}
             >
               <Moon className="w-3 h-3 text-purple-500" />
-              <span>Evening</span>
+              <span>{t.timeFilterEvening}</span>
               <span className="text-[9px] opacity-75 font-mono">({habitCounts.evening})</span>
             </button>
 
@@ -1561,7 +1568,7 @@ export const App: React.FC = () => {
               }`}
             >
               <Sparkles className="w-3 h-3 text-emerald-500" />
-              <span>Anytime</span>
+              <span>{t.timeFilterAnytime}</span>
               <span className="text-[9px] opacity-75 font-mono">({habitCounts.anytime})</span>
             </button>
           </div>
@@ -1571,8 +1578,7 @@ export const App: React.FC = () => {
         <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
           {baseHabitsList.length === 0 ? (
             <div className="text-center py-12 px-4 text-xs text-stone-400">
-              <p className="font-medium text-stone-500 mb-1">No habits here</p>
-              <p>Track habits with daily cadence, streaks, or +/- counters.</p>
+              <p className="font-medium text-stone-500 mb-1">{t.noHabitsMessage}</p>
             </div>
           ) : habitTimeFilter === 'all' ? (
             /* Sectioned Views under 'All' */
@@ -1699,7 +1705,7 @@ export const App: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
             <span className="font-bold text-xs text-stone-800 uppercase tracking-wider">
-              Tasks ({tasksList.length})
+              {t.tasksTitle} ({tasksList.length})
             </span>
           </div>
 
@@ -1711,7 +1717,7 @@ export const App: React.FC = () => {
                   taskTab === 'all' ? 'bg-white text-stone-900 shadow-2xs font-semibold' : 'text-stone-500'
                 }`}
               >
-                All ({allTasksList.length})
+                {t.subtabAll} ({allTasksList.length})
               </button>
               <button
                 onClick={() => setTaskTab('todo')}
@@ -1719,7 +1725,7 @@ export const App: React.FC = () => {
                   taskTab === 'todo' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-stone-500'
                 }`}
               >
-                To Do ({todoTasksCount})
+                {t.subtabToDo} ({todoTasksCount})
               </button>
               <button
                 onClick={() => setTaskTab('without_timeline')}
@@ -1729,7 +1735,7 @@ export const App: React.FC = () => {
                     : 'text-stone-500'
                 }`}
               >
-                Without Timeline ({withoutTimelineCount})
+                {t.subtabWithoutTimeline} ({withoutTimelineCount})
               </button>
             </div>
 
@@ -1745,7 +1751,7 @@ export const App: React.FC = () => {
               title="Add task specifically scheduled for today"
             >
               <Plus className="w-3 h-3" />
-              <span>+ Today</span>
+              <span>{t.plusTodayBtn}</span>
             </button>
           </div>
         </div>
@@ -1754,8 +1760,7 @@ export const App: React.FC = () => {
         <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
           {tasksList.length === 0 ? (
             <div className="text-center py-12 px-4 text-xs text-stone-400">
-              <p className="font-medium text-stone-500 mb-1">No tasks in this view</p>
-              <p>Switch tabs or add a task above.</p>
+              <p className="font-medium text-stone-500 mb-1">{t.noTasksMessage}</p>
             </div>
           ) : (
             tasksList.map((task) => {
@@ -1852,10 +1857,10 @@ export const App: React.FC = () => {
                               }`}
                             >
                               <Calendar className="w-3 h-3 text-amber-600" />
-                              {isDueToday ? 'Today' : `Due ${task.due_date}`}
+                              {isDueToday ? t.taskBtnToday : `${t.duePrefix} ${task.due_date}`}
                             </span>
                           ) : (
-                            <span className="text-stone-400 italic">No timeline</span>
+                            <span className="text-stone-400 italic">{t.noTimeline}</span>
                           )}
 
                           {task.scheduled_start && (
@@ -1874,7 +1879,7 @@ export const App: React.FC = () => {
                               className="text-[10px] text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded font-medium transition"
                               title="Set due date to today so it can be scheduled on the agenda"
                             >
-                              + Today
+                              {t.plusTodayBtn}
                             </button>
                           )}
 
@@ -1885,7 +1890,7 @@ export const App: React.FC = () => {
                               title="Place onto today's agenda time grid"
                             >
                               <Clock className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>Agenda</span>
+                              <span>{t.taskBtnAgenda}</span>
                             </button>
                           )}
 
@@ -1895,7 +1900,7 @@ export const App: React.FC = () => {
                               className="text-[10px] text-stone-400 hover:text-stone-700 px-1.5 py-0.5 rounded hover:bg-stone-100"
                               title="Return to Without Timeline backlog"
                             >
-                              Clear
+                              {t.taskBtnClear}
                             </button>
                           )}
                           <GripVertical className="w-3.5 h-3.5 text-stone-400 shrink-0 cursor-grab" />

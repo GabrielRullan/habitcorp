@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Task, CalendarMeeting, Ghost, Project } from '../types';
+import { useTranslation } from '../i18n/I18nContext';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -63,6 +64,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   onDeleteMeeting,
   onRescheduleMeeting,
 }) => {
+  const { t, formatDate } = useTranslation();
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
   const [showUnscheduledDrawer, setShowUnscheduledDrawer] = useState(false);
   const [drawerTab, setDrawerTab] = useState<'all' | 'habits' | 'tasks'>('all');
@@ -192,7 +194,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   : 'text-stone-500 hover:text-stone-800'
               }`}
             >
-              Day
+              {t.agendaDay}
             </button>
             <button
               onClick={() => setViewMode('week')}
@@ -202,7 +204,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   : 'text-stone-500 hover:text-stone-800'
               }`}
             >
-              Week
+              {t.agendaWeek}
             </button>
           </div>
 
@@ -218,7 +220,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               onClick={handleToday}
               className="px-2 py-0.5 text-xs font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 rounded-lg transition"
             >
-              Today
+              {t.agendaToday}
             </button>
             <button
               onClick={handleNextDay}
@@ -230,7 +232,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           </div>
 
           <span className="text-xs font-bold text-stone-800 ml-1">
-            {new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString('en-US', {
+            {formatDate(new Date(`${selectedDate}T12:00:00Z`), {
               month: 'short',
               day: 'numeric',
               year: 'numeric',
@@ -262,7 +264,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   style={{ backgroundColor: activeProject?.color || '#6366f1' }}
                 />
                 <span className="truncate max-w-[130px]">
-                  {activeProject?.name || 'Project'} (others transparent)
+                  {activeProject?.name || 'Project'} {t.agendaOthersTransparent}
                 </span>
               </span>
             );
@@ -283,7 +285,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               title="Toggle external calendars from spouses, children, etc."
             >
               <span>👻</span>
-              <span>{showGhosts ? 'Ghosts' : 'Hidden'}</span>
+              <span>{showGhosts ? t.agendaGhosts : t.agendaHidden}</span>
               {totalGhostEvents > 0 && (
                 <span className="text-[10px] bg-pink-100 text-pink-700 px-1 rounded font-mono">
                   {totalGhostEvents}
@@ -297,7 +299,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 onChange={(e) => setSelectedGhostId(e.target.value)}
                 className="bg-transparent border-0 text-[11px] text-pink-700 focus:ring-0 px-1.5 py-0.5 cursor-pointer font-medium"
               >
-                <option value="all" className="bg-white text-stone-800">All</option>
+                <option value="all" className="bg-white text-stone-800">{t.subtabAll}</option>
                 {ghosts.map((g) => (
                   <option key={g.id} value={g.id} className="bg-white text-stone-800">
                     {g.name}
@@ -313,7 +315,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             title="Create new calendar event or meeting"
           >
             <Plus className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Event</span>
+            <span>{t.agendaNewEvent}</span>
           </button>
 
           <button
@@ -325,7 +327,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             }`}
           >
             <CalendarDays className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Unscheduled ({unscheduledTasks.length})</span>
+            <span>{t.agendaUnscheduled} ({unscheduledTasks.length})</span>
           </button>
         </div>
       </div>
@@ -335,7 +337,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         <div className="px-3.5 py-2 bg-amber-50/60 border-b border-amber-200/60 flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
             <span className="font-semibold text-amber-900 flex items-center gap-1 shrink-0 text-[11px]">
-              <span>📌 Tasks & Routines for Today:</span>
+              <span>{t.agendaTasksRoutinesToday}</span>
             </span>
             {tasksForSelectedDate.slice(0, 6).map((t) => {
               const isRoutine = t.type === 'habit' || t.type === 'daily';
@@ -376,7 +378,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               onClick={() => setShowUnscheduledDrawer(true)}
               className="text-amber-800 font-semibold text-[10px] hover:underline shrink-0"
             >
-              +{tasksForSelectedDate.length - 6} more
+              +{tasksForSelectedDate.length - 6} {t.agendaMore}
             </button>
           )}
         </div>
@@ -408,7 +410,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                       }`}
                     >
                       <div className="text-[9px] uppercase text-stone-400">
-                        {dateObj.toLocaleDateString('en-US', { weekday: 'short' })}
+                        {formatDate(dateObj, { weekday: 'short' })}
                       </div>
                       <div className="text-xs font-bold">{dateObj.getUTCDate()}</div>
                     </div>
@@ -498,7 +500,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             type="button"
                             onClick={() => setSlotPicker({ date: dateStr, hour })}
                             className="absolute right-1 top-1 opacity-0 group-hover/slot:opacity-100 p-0.5 bg-white hover:bg-indigo-50 text-stone-400 hover:text-indigo-600 rounded text-[9px] transition border border-stone-200 shadow-2xs z-10"
-                            title="Add task or meeting"
+                            title={t.agendaAddSlotTitle}
                           >
                             <Plus className="w-2.5 h-2.5" />
                           </button>
@@ -537,7 +539,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                           e.stopPropagation();
                                           onEditMeeting && onEditMeeting(m);
                                         }}
-                                        title="Edit event"
+                                        title={t.agendaEditEvent}
                                         className="opacity-0 group-hover/event:opacity-100 p-0.5 text-pink-400 hover:text-pink-700 rounded transition"
                                       >
                                         <Pencil className="w-2.5 h-2.5" />
@@ -549,7 +551,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                             e.stopPropagation();
                                             onDeleteMeeting(m.id);
                                           }}
-                                          title="Delete event"
+                                          title={t.agendaDeleteEvent}
                                           className="opacity-0 group-hover/event:opacity-100 p-0.5 text-pink-400 hover:text-rose-600 rounded transition"
                                         >
                                           <Trash2 className="w-2.5 h-2.5" />
@@ -629,7 +631,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                         e.stopPropagation();
                                         onEditMeeting && onEditMeeting(m);
                                       }}
-                                      title="Edit event"
+                                      title={t.agendaEditEvent}
                                       className="opacity-0 group-hover/event:opacity-100 p-0.5 text-stone-400 hover:text-indigo-600 rounded transition"
                                     >
                                       <Pencil className="w-2.5 h-2.5" />
@@ -641,7 +643,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                           e.stopPropagation();
                                           onDeleteMeeting(m.id);
                                         }}
-                                        title="Delete event"
+                                        title={t.agendaDeleteEvent}
                                         className="opacity-0 group-hover/event:opacity-100 p-0.5 text-stone-400 hover:text-rose-600 rounded transition"
                                       >
                                         <Trash2 className="w-2.5 h-2.5" />
@@ -666,7 +668,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                         className="text-indigo-600 hover:underline flex items-center gap-0.5 ml-auto shrink-0"
                                       >
                                         <ExternalLink className="w-2 h-2" />
-                                        <span>Join</span>
+                                        <span>{t.agendaJoin}</span>
                                       </a>
                                     )}
                                   </div>
@@ -777,7 +779,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                     {/* Routine Badge */}
                                     <span className="px-1.5 py-0.2 rounded text-[8px] font-semibold bg-emerald-100/90 text-emerald-800 border border-emerald-200 flex items-center gap-0.5 shrink-0">
                                       {getRoutineIcon(t.time_of_day)}
-                                      <span>Routine</span>
+                                      <span>{t.routineBadge}</span>
                                     </span>
 
                                     {/* Time of Day Pill */}
@@ -853,7 +855,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
                 <CalendarDays className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Unscheduled Backlog ({unscheduledTasks.length})</span>
+                <span>{t.unscheduledDrawerTitle} ({unscheduledTasks.length})</span>
               </span>
               <button
                 onClick={() => setShowUnscheduledDrawer(false)}
@@ -873,7 +875,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                All ({unscheduledTasks.length})
+                {t.unscheduledDrawerTabAll} ({unscheduledTasks.length})
               </button>
               <button
                 onClick={() => setDrawerTab('habits')}
@@ -883,7 +885,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                Routines ({unscheduledTasks.filter((t) => t.type === 'habit' || t.type === 'daily').length})
+                {t.unscheduledDrawerTabRoutines} ({unscheduledTasks.filter((t) => t.type === 'habit' || t.type === 'daily').length})
               </button>
               <button
                 onClick={() => setDrawerTab('tasks')}
@@ -893,7 +895,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                Tasks ({unscheduledTasks.filter((t) => t.type === 'todo').length})
+                {t.unscheduledDrawerTabTasks} ({unscheduledTasks.filter((t) => t.type === 'todo').length})
               </button>
             </div>
 
@@ -909,19 +911,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                       : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
                   }`}
                 >
-                  {tod}
+                  {tod === 'all' ? t.timeFilterAll : tod === 'morning' ? t.timeFilterMorning : tod === 'workday' ? t.timeFilterWorkday : t.timeFilterEvening}
                 </button>
               ))}
             </div>
 
             <p className="text-[10px] text-stone-500 mb-2">
-              Click to place onto {selectedDate}&apos;s agenda, or drag into any hour slot.
+              {t.unscheduledDrawerSubtitle}
             </p>
 
             <div className="space-y-1.5 flex-1 overflow-y-auto">
               {filteredUnscheduledTasks.length === 0 ? (
                 <div className="text-center py-8 text-xs text-stone-400">
-                  No unscheduled items match filter!
+                  {t.unscheduledDrawerEmpty}
                 </div>
               ) : (
                 filteredUnscheduledTasks.map((t) => {

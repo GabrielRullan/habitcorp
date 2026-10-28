@@ -2,6 +2,7 @@ export type TaskType = 'habit' | 'daily' | 'todo';
 export type DifficultyTier = 'trivial' | 'easy' | 'medium' | 'hard';
 export type HabitResetPeriod = 'daily' | 'weekly' | 'monthly';
 export type DailyFrequency = 'daily' | 'weekly' | 'every_n_days' | 'monthly';
+export type EventRecurrence = 'none' | 'daily' | 'weekdays' | 'weekly' | 'custom_days' | 'monthly';
 export type TimeOfDay = 'morning' | 'workday' | 'evening' | 'anytime';
 
 export interface Subtask {
@@ -86,6 +87,10 @@ export interface CalendarMeeting {
   end_time: string; // ISO
   all_day: number;
   color: string;
+  recurrence?: EventRecurrence;
+  repeat_days?: number[]; // 0=Sun .. 6=Sat
+  repeat_until?: string | null; // YYYY-MM-DD
+  series_start_time?: string;
   created_at: string;
 }
 

@@ -151,6 +151,9 @@ export function initSchema(db: DatabaseSync) {
       end_time TEXT NOT NULL,
       all_day INTEGER NOT NULL DEFAULT 0,
       color TEXT NOT NULL DEFAULT '#6366f1',
+      recurrence TEXT NOT NULL DEFAULT 'none',
+      repeat_days TEXT NOT NULL DEFAULT '[]',
+      repeat_until TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -207,6 +210,15 @@ export function initSchema(db: DatabaseSync) {
     db.exec(`ALTER TABLE calendar_events ADD COLUMN ghost_ids TEXT DEFAULT '[]';`);
   } catch {}
   try {
+    db.exec(`ALTER TABLE calendar_events ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none';`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE calendar_events ADD COLUMN repeat_days TEXT NOT NULL DEFAULT '[]';`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE calendar_events ADD COLUMN repeat_until TEXT;`);
+  } catch {}
+  try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_events_ghost ON calendar_events(user_id, is_ghost);`);
   } catch {}
   try {
@@ -246,16 +258,7 @@ export function initSchema(db: DatabaseSync) {
 
         seedGabrielRoutines(db, 'user_gabriel');
       } else {
-        db.prepare('UPDATE users SET password_hash = ?, email = ?, api_key = ? WHERE id = ?').run(
-          hash,
-          'gabriel@rullan.cat',
-          'tk_gabriel_rullan_key',
-          existingUser.id
-        );
-        const hasProjects = db.prepare('SELECT id FROM projects WHERE user_id = ? LIMIT 1').get(existingUser.id);
-        if (!hasProjects) {
-          seedGabrielRoutines(db, existingUser.id);
-        }
+        db.prepare('UPDATE users SET password_hash = ?, email = ? WHERE id = ?').run(hash, 'gabriel@rullan.cat', existingUser.id);
       }
     }
   } catch (err) {
