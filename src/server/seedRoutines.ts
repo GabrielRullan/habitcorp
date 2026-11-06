@@ -401,6 +401,29 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     difficulty: 'trivial',
   });
 
+  addTask({
+    id: 'habit_job_offers',
+    projectId: 'proj_corp',
+    type: 'daily',
+    time_of_day: 'morning',
+    title: 'Verificar noves ofertes de feina (💼)',
+    notes: 'Revisar alertes de noves posicions en LinkedIn i portals de feina.',
+    difficulty: 'easy',
+    streak: 0,
+    frequency: 'daily',
+    microHabitTitle: 'Obrir LinkedIn i veure 1 oferta',
+  });
+
+  addTask({
+    id: 'task_api_review',
+    projectId: 'proj_corp',
+    type: 'todo',
+    time_of_day: 'workday',
+    title: 'Revisió API (⚙️)',
+    notes: 'Auditar endpoints, esquemes de seguretat i documentació de les APIs.',
+    difficulty: 'medium',
+  });
+
   // 5. CALENDAR MEETINGS & FIXED ANCHORS
   const insertEvent = db.prepare(`
     INSERT INTO calendar_events (
