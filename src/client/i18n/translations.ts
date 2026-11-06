@@ -53,6 +53,14 @@ export interface Translations {
   timeFilterEvening: string;
   timeFilterAnytime: string;
   plusTodayBtn: string;
+  convertHabitToTodayTask: string;
+  convertHabitToTodayTaskTooltip: string;
+  habitConvertedToast: string;
+  habitActionActive: string;
+  habitActionDone: string;
+  habitActionBadge: string;
+  habitActionAlreadyExistsToast: string;
+  habitActionCreatedToast: string;
   streakLabel: string;
   routineBadge: string;
   noHabitsMessage: string;
@@ -447,6 +455,14 @@ export const translations: Record<Language, Translations> = {
     timeFilterEvening: 'Evening',
     timeFilterAnytime: 'Anytime',
     plusTodayBtn: '+ Today',
+    convertHabitToTodayTask: "+ Today's Action",
+    convertHabitToTodayTaskTooltip: "Create today's action task for this habit (synchronized with habit)",
+    habitConvertedToast: 'converted to action task for today!',
+    habitActionActive: '✓ Action active',
+    habitActionDone: '✓ Action done',
+    habitActionBadge: 'Habit Action',
+    habitActionAlreadyExistsToast: "This habit already has today's action active in the tasks column.",
+    habitActionCreatedToast: "Today's action created! Completing it will log your habit.",
     streakLabel: 'streak',
     routineBadge: 'Routine',
     noHabitsMessage: 'No habits or routines found in this view.',
@@ -841,6 +857,14 @@ export const translations: Record<Language, Translations> = {
     timeFilterEvening: 'Tarde/Noche',
     timeFilterAnytime: 'Cualquier hora',
     plusTodayBtn: '+ Hoy',
+    convertHabitToTodayTask: '+ Acción de hoy',
+    convertHabitToTodayTaskTooltip: 'Crear la tarea de acción de hoy para este hábito (sincronizada con el hábito)',
+    habitConvertedToast: '¡convertido en tarea de acción para hoy!',
+    habitActionActive: '✓ Acción activa',
+    habitActionDone: '✓ Acción hecha',
+    habitActionBadge: 'Acción de hábito',
+    habitActionAlreadyExistsToast: 'Este hábito ya tiene su acción de hoy activa en la columna de tareas.',
+    habitActionCreatedToast: '¡Acción de hoy creada! Al completarla se registrará tu hábito.',
     streakLabel: 'racha',
     routineBadge: 'Rutina',
     noHabitsMessage: 'No se encontraron hábitos ni rutinas en esta vista.',
@@ -1235,6 +1259,14 @@ export const translations: Record<Language, Translations> = {
     timeFilterEvening: 'Vespre',
     timeFilterAnytime: 'Qualsevol hora',
     plusTodayBtn: '+ Avui',
+    convertHabitToTodayTask: "+ Acció d'avui",
+    convertHabitToTodayTaskTooltip: "Crear la tasca d'acció d'avui per aquest hàbit (sincronitzada amb l'hàbit)",
+    habitConvertedToast: "convertit en tasca d'acció per avui!",
+    habitActionActive: '✓ Acció activa',
+    habitActionDone: '✓ Acció feta',
+    habitActionBadge: "Acció d'hàbit",
+    habitActionAlreadyExistsToast: "Aquest hàbit ja té la seva acció d'avui activa a la columna de tasques.",
+    habitActionCreatedToast: "Acció d'avui creada! En completar-la es registrarà el teu hàbit.",
     streakLabel: 'ratxa',
     routineBadge: 'Rutina',
     noHabitsMessage: "No s'han trobat hàbits ni rutines en aquesta vista.",

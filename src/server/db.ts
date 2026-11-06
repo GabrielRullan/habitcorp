@@ -109,6 +109,9 @@ export function initSchema(db: DatabaseSync) {
       -- Micro-Habit Starter Step (BJ Fogg Tiny Habits: Minimum Viable Routine)
       micro_habit_title TEXT DEFAULT '',
 
+      -- Habit Origin Link (Action task of a habit for today)
+      habit_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       completed_at TEXT
@@ -247,6 +250,12 @@ export function initSchema(db: DatabaseSync) {
   } catch {}
   try {
     db.exec(`ALTER TABLE tasks ADD COLUMN micro_habit_title TEXT DEFAULT '';`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN habit_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`);
+  } catch {}
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_habit ON tasks(user_id, habit_id);`);
   } catch {}
 
   // Ensure default test user always exists for zero-friction access

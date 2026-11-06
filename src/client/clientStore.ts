@@ -131,8 +131,8 @@ function getDefaultSeedData(): StoredData {
         last_completed_date: null,
         start_date: null,
         due_date: null,
-        scheduled_date: today,
-        scheduled_start: '07:30',
+        scheduled_date: null,
+        scheduled_start: null,
         scheduled_duration: 30,
         created_at: now,
         updated_at: now,
@@ -162,8 +162,8 @@ function getDefaultSeedData(): StoredData {
         last_completed_date: null,
         start_date: null,
         due_date: null,
-        scheduled_date: today,
-        scheduled_start: '09:00',
+        scheduled_date: null,
+        scheduled_start: null,
         scheduled_duration: 30,
         created_at: now,
         updated_at: now,
@@ -193,8 +193,8 @@ function getDefaultSeedData(): StoredData {
         last_completed_date: null,
         start_date: null,
         due_date: null,
-        scheduled_date: today,
-        scheduled_start: '09:30',
+        scheduled_date: null,
+        scheduled_start: null,
         scheduled_duration: 90,
         created_at: now,
         updated_at: now,
@@ -224,8 +224,8 @@ function getDefaultSeedData(): StoredData {
         last_completed_date: null,
         start_date: null,
         due_date: null,
-        scheduled_date: today,
-        scheduled_start: '14:30',
+        scheduled_date: null,
+        scheduled_start: null,
         scheduled_duration: 30,
         created_at: now,
         updated_at: now,
@@ -255,8 +255,8 @@ function getDefaultSeedData(): StoredData {
         last_completed_date: null,
         start_date: null,
         due_date: null,
-        scheduled_date: today,
-        scheduled_start: '15:30',
+        scheduled_date: null,
+        scheduled_start: null,
         scheduled_duration: 90,
         created_at: now,
         updated_at: now,
@@ -975,7 +975,16 @@ export async function handleClientStorageRequest(
       const task = db.tasks.find((t) => t.id === taskId);
       if (task) {
         if (task.type === 'habit' && (body.direction === 'up' || body.direction === 'down')) {
-          if (body.direction === 'up') task.counter_up = (task.counter_up || 0) + 1;
+          if (body.direction === 'up') {
+            task.counter_up = (task.counter_up || 0) + 1;
+            const linkedActions = db.tasks.filter(
+              (t) => t.habit_id === taskId && (t.due_date === today || t.scheduled_date === today)
+            );
+            for (const act of linkedActions) {
+              act.completed = 1;
+              act.completed_at = now;
+            }
+          }
           if (body.direction === 'down') task.counter_down = (task.counter_down || 0) + 1;
         } else if (task.type === 'daily' || task.type === 'habit') {
           task.completed = task.completed ? 0 : 1;
@@ -989,9 +998,42 @@ export async function handleClientStorageRequest(
             task.last_completed_date = null;
             task.completed_at = null;
           }
+          // Synchronize linked action tasks for today
+          const linkedActions = db.tasks.filter(
+            (t) => t.habit_id === taskId && (t.due_date === today || t.scheduled_date === today)
+          );
+          for (const act of linkedActions) {
+            act.completed = task.completed;
+            act.completed_at = task.completed ? now : null;
+          }
         } else {
           task.completed = task.completed ? 0 : 1;
           task.completed_at = task.completed ? now : null;
+          if (task.habit_id) {
+            const parent = db.tasks.find((t) => t.id === task.habit_id);
+            if (parent) {
+              if (parent.type === 'daily') {
+                if (task.completed && !parent.completed) {
+                  parent.completed = 1;
+                  parent.streak = (parent.streak || 0) + 1;
+                  parent.best_streak = Math.max(parent.best_streak || 0, parent.streak);
+                  parent.last_completed_date = today;
+                  parent.completed_at = now;
+                } else if (!task.completed && parent.completed) {
+                  parent.completed = 0;
+                  parent.streak = Math.max(0, (parent.streak || 1) - 1);
+                  parent.last_completed_date = null;
+                  parent.completed_at = null;
+                }
+              } else if (parent.type === 'habit') {
+                if (task.completed) {
+                  parent.counter_up = (parent.counter_up || 0) + 1;
+                } else {
+                  parent.counter_up = Math.max(0, (parent.counter_up || 0) - 1);
+                }
+              }
+            }
+          }
         }
         saveClientDb(db);
         return enrichTask(task);
@@ -1032,6 +1074,10 @@ export async function handleClientStorageRequest(
         difficulty_weight: body.difficulty === 'hard' ? 4 : body.difficulty === 'medium' ? 3 : 2,
         tags: body.tags || [],
         time_of_day: body.time_of_day || 'anytime',
+        anchor_task_id: body.anchor_task_id || null,
+        anchor_habit_title: body.anchor_habit_title || '',
+        micro_habit_title: body.micro_habit_title || '',
+        habit_id: body.habit_id || null,
         habit_positive: body.habit_positive !== undefined ? body.habit_positive : 1,
         habit_negative: body.habit_negative !== undefined ? body.habit_negative : 0,
         counter_up: 0,

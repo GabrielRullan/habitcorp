@@ -302,7 +302,7 @@ function getTaskWithSubtasks(taskId: string, userId: string) {
   const subtasks = db.prepare('SELECT * FROM subtasks WHERE task_id = ? ORDER BY position ASC').all(taskId);
   const today = getTodayDateString();
   let is_due_today = false;
-  if (task.type === 'daily') {
+  if (task.type === 'daily' || task.type === 'habit') {
     is_due_today = isDailyDueOnDate(task, today);
   } else if (task.due_date) {
     is_due_today = task.due_date.slice(0, 10) <= today && !task.completed;
@@ -482,14 +482,14 @@ apiRouter.post('/tasks', (req, res) => {
   db.prepare(`
     INSERT INTO tasks (
       id, user_id, project_id, type, title, notes, difficulty, difficulty_weight, tags,
-      time_of_day, anchor_task_id, anchor_habit_title, micro_habit_title,
+      time_of_day, anchor_task_id, anchor_habit_title, micro_habit_title, habit_id,
       habit_positive, habit_negative, counter_up, counter_down, habit_reset_period,
       frequency, repeat_interval, repeat_days, streak, best_streak, completed,
       start_date, due_date, scheduled_date, scheduled_start, scheduled_duration,
       created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
       ?, ?, 0, 0, ?,
       ?, ?, ?, 0, 0, 0,
       ?, ?, ?, ?, ?,
@@ -509,6 +509,7 @@ apiRouter.post('/tasks', (req, res) => {
     b.anchor_task_id || null,
     b.anchor_habit_title || '',
     b.micro_habit_title || '',
+    b.habit_id || null,
     habitPositive,
     habitNegative,
     habitResetPeriod,
@@ -571,14 +572,14 @@ apiRouter.post('/tasks/batch', (req, res) => {
       db.prepare(`
         INSERT INTO tasks (
           id, user_id, project_id, type, title, notes, difficulty, difficulty_weight, tags,
-          time_of_day, anchor_task_id, anchor_habit_title, micro_habit_title,
+          time_of_day, anchor_task_id, anchor_habit_title, micro_habit_title, habit_id,
           habit_positive, habit_negative, counter_up, counter_down, habit_reset_period,
           frequency, repeat_interval, repeat_days, streak, best_streak, completed,
           start_date, due_date, scheduled_date, scheduled_start, scheduled_duration,
           created_at, updated_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
           ?, ?, 0, 0, ?,
           ?, ?, ?, 0, 0, 0,
           ?, ?, ?, ?, ?,
@@ -598,6 +599,7 @@ apiRouter.post('/tasks/batch', (req, res) => {
         b.anchor_task_id || null,
         b.anchor_habit_title || '',
         b.micro_habit_title || '',
+        b.habit_id || null,
         b.habit_positive !== undefined ? (b.habit_positive ? 1 : 0) : 1,
         b.habit_negative !== undefined ? (b.habit_negative ? 1 : 0) : 0,
         b.habit_reset_period || 'daily',
@@ -695,6 +697,10 @@ apiRouter.patch('/tasks/:id', (req, res) => {
   if (b.micro_habit_title !== undefined) {
     updates.push('micro_habit_title = ?');
     values.push(b.micro_habit_title || '');
+  }
+  if (b.habit_id !== undefined) {
+    updates.push('habit_id = ?');
+    values.push(b.habit_id || null);
   }
   if (b.difficulty !== undefined && ['trivial', 'easy', 'medium', 'hard'].includes(b.difficulty)) {
     updates.push('difficulty = ?');
@@ -814,6 +820,14 @@ apiRouter.post('/tasks/:id/score', (req, res) => {
 
   if (direction === 'counter_up' || (task.type === 'habit' && direction === 'up')) {
     db.prepare('UPDATE tasks SET counter_up = counter_up + 1, updated_at = ? WHERE id = ?').run(now, taskId);
+    // Mark linked action task for today as completed
+    db.prepare(`
+      UPDATE tasks SET
+        completed = 1,
+        completed_at = ?,
+        updated_at = ?
+      WHERE habit_id = ? AND user_id = ? AND (due_date = ? OR scheduled_date = ? OR due_date IS NULL)
+    `).run(now, now, taskId, userId, today, today);
   } else if (direction === 'counter_down' || (task.type === 'habit' && direction === 'down')) {
     db.prepare('UPDATE tasks SET counter_down = counter_down + 1, updated_at = ? WHERE id = ?').run(now, taskId);
   } else if (task.type === 'daily') {
@@ -831,6 +845,15 @@ apiRouter.post('/tasks/:id/score', (req, res) => {
           updated_at = ?
         WHERE id = ?
       `).run(newStreak, newBest, today, now, now, taskId);
+
+      // Synchronize any linked action task for today
+      db.prepare(`
+        UPDATE tasks SET
+          completed = 1,
+          completed_at = ?,
+          updated_at = ?
+        WHERE habit_id = ? AND user_id = ? AND (due_date = ? OR scheduled_date = ? OR due_date IS NULL)
+      `).run(now, now, taskId, userId, today, today);
     } else {
       const newStreak = Math.max(0, task.streak - 1);
       db.prepare(`
@@ -842,6 +865,15 @@ apiRouter.post('/tasks/:id/score', (req, res) => {
           updated_at = ?
         WHERE id = ?
       `).run(newStreak, now, taskId);
+
+      // Synchronize any linked action task for today
+      db.prepare(`
+        UPDATE tasks SET
+          completed = 0,
+          completed_at = null,
+          updated_at = ?
+        WHERE habit_id = ? AND user_id = ? AND (due_date = ? OR scheduled_date = ? OR due_date IS NULL)
+      `).run(now, taskId, userId, today, today);
     }
   } else {
     // Todo (Timed or Untimed)
@@ -853,6 +885,46 @@ apiRouter.post('/tasks/:id/score', (req, res) => {
         updated_at = ?
       WHERE id = ?
     `).run(newStatus, newStatus === 1 ? now : null, now, taskId);
+
+    // If this todo is the action of a habit for today, synchronize parent habit
+    if (task.habit_id) {
+      const parent = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(task.habit_id, userId) as any;
+      if (parent) {
+        if (parent.type === 'daily') {
+          if (newStatus === 1 && !parent.completed) {
+            const newStreak = parent.streak + 1;
+            const newBest = Math.max(parent.best_streak, newStreak);
+            db.prepare(`
+              UPDATE tasks SET
+                completed = 1,
+                streak = ?,
+                best_streak = ?,
+                last_completed_date = ?,
+                completed_at = ?,
+                updated_at = ?
+              WHERE id = ?
+            `).run(newStreak, newBest, today, now, now, parent.id);
+          } else if (newStatus === 0 && parent.completed) {
+            const newStreak = Math.max(0, parent.streak - 1);
+            db.prepare(`
+              UPDATE tasks SET
+                completed = 0,
+                streak = ?,
+                last_completed_date = null,
+                completed_at = null,
+                updated_at = ?
+              WHERE id = ?
+            `).run(newStreak, now, parent.id);
+          }
+        } else if (parent.type === 'habit') {
+          if (newStatus === 1) {
+            db.prepare('UPDATE tasks SET counter_up = counter_up + 1, updated_at = ? WHERE id = ?').run(now, parent.id);
+          } else if (newStatus === 0) {
+            db.prepare('UPDATE tasks SET counter_up = MAX(0, counter_up - 1), updated_at = ? WHERE id = ?').run(now, parent.id);
+          }
+        }
+      }
+    }
   }
 
   db.prepare(`

@@ -36,6 +36,9 @@ export interface Task {
   // Micro-Habit Starter Step (BJ Fogg Tiny Habits: Minimum Viable Routine)
   micro_habit_title?: string | null;
 
+  // Origin Habit Link (Action task of a habit for today)
+  habit_id?: string | null;
+
   // Habit
   habit_positive: number;
   habit_negative: number;

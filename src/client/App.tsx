@@ -31,6 +31,7 @@ import {
   Tag,
   Trash2,
   X,
+  ListPlus,
   Sun,
   Briefcase,
   Moon,
@@ -104,7 +105,8 @@ export const App: React.FC = () => {
   const [habitTimeFilter, setHabitTimeFilter] = useState<'all' | 'morning' | 'workday' | 'evening' | 'anytime'>('all');
   const [taskTab, setTaskTab] = useState<'all' | 'todo' | 'without_timeline'>('all');
   const [mobileHabitsTasksTab, setMobileHabitsTasksTab] = useState<'habits' | 'tasks'>('habits');
-  const [mobileTasksAgendaTab, setMobileTasksAgendaTab] = useState<'tasks' | 'agenda'>('tasks');
+  const [mobileTasksAgendaTab, setMobileTasksAgendaTab] = useState<'tasks' | 'agenda' | 'habits'>('tasks');
+  const [desktopBoardTab, setDesktopBoardTab] = useState<'tasks' | 'habits'>('tasks');
 
   // Filters
   const [selectedProjectId, setSelectedProjectId] = useState<string | 'all'>('all');
@@ -719,24 +721,76 @@ export const App: React.FC = () => {
       }
     }
 
-    setTasks((prev) =>
-      prev.map((t) => {
+    const targetTask = tasks.find((t) => t.id === taskId);
+    const nowIso = new Date().toISOString();
+
+    setTasks((prev) => {
+      // 1. Scoring a habit or daily: synchronize linked action tasks for today
+      if (targetTask && (targetTask.type === 'daily' || targetTask.type === 'habit')) {
+        const nextDailyCompleted = targetTask.type === 'daily' ? (targetTask.completed ? 0 : 1) : 1;
+        return prev.map((t) => {
+          if (t.id === taskId) {
+            if (t.type === 'habit') {
+              return {
+                ...t,
+                counter_up: direction === 'up' ? t.counter_up + 1 : t.counter_up,
+                counter_down: direction === 'down' ? t.counter_down + 1 : t.counter_down,
+              };
+            } else {
+              const nextStreak = nextDailyCompleted ? t.streak + 1 : Math.max(0, t.streak - 1);
+              return { ...t, completed: nextDailyCompleted, streak: nextStreak };
+            }
+          }
+          // Synchronize any linked action task for today
+          if (
+            t.habit_id === taskId &&
+            (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr || t.is_due_today)
+          ) {
+            if (targetTask.type === 'daily') {
+              return { ...t, completed: nextDailyCompleted, completed_at: nextDailyCompleted ? nowIso : null };
+            } else if (direction === 'up') {
+              return { ...t, completed: 1, completed_at: nowIso };
+            }
+          }
+          return t;
+        });
+      }
+
+      // 2. Scoring an action task of a habit: synchronize parent habit
+      if (targetTask && targetTask.habit_id) {
+        const nextTaskCompleted = targetTask.completed ? 0 : 1;
+        const parentId = targetTask.habit_id;
+        return prev.map((t) => {
+          if (t.id === taskId) {
+            return { ...t, completed: nextTaskCompleted, completed_at: nextTaskCompleted ? nowIso : null };
+          }
+          if (t.id === parentId) {
+            if (t.type === 'daily') {
+              if (nextTaskCompleted && !t.completed) {
+                const nextStreak = t.streak + 1;
+                return { ...t, completed: 1, streak: nextStreak, last_completed_date: todayStr, completed_at: nowIso };
+              } else if (!nextTaskCompleted && t.completed) {
+                const nextStreak = Math.max(0, t.streak - 1);
+                return { ...t, completed: 0, streak: nextStreak, last_completed_date: null, completed_at: null };
+              }
+            } else if (t.type === 'habit') {
+              if (nextTaskCompleted) {
+                return { ...t, counter_up: (t.counter_up || 0) + 1 };
+              } else {
+                return { ...t, counter_up: Math.max(0, (t.counter_up || 0) - 1) };
+              }
+            }
+          }
+          return t;
+        });
+      }
+
+      // 3. Regular task scoring
+      return prev.map((t) => {
         if (t.id !== taskId) return t;
-        if (t.type === 'habit') {
-          return {
-            ...t,
-            counter_up: direction === 'up' ? t.counter_up + 1 : t.counter_up,
-            counter_down: direction === 'down' ? t.counter_down + 1 : t.counter_down,
-          };
-        } else if (t.type === 'daily') {
-          const nextCompleted = t.completed ? 0 : 1;
-          const nextStreak = nextCompleted ? t.streak + 1 : Math.max(0, t.streak - 1);
-          return { ...t, completed: nextCompleted, streak: nextStreak };
-        } else {
-          return { ...t, completed: t.completed ? 0 : 1 };
-        }
-      })
-    );
+        return { ...t, completed: t.completed ? 0 : 1, completed_at: t.completed ? null : nowIso };
+      });
+    });
 
     try {
       const updated = await fetchJson(`/api/v1/tasks/${taskId}/score`, {
@@ -748,6 +802,8 @@ export const App: React.FC = () => {
         body: JSON.stringify({ direction }),
       });
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)));
+      // Refresh tasks in background to keep all synchronized parent/child states fresh
+      fetchTasks();
     } catch (e) {
       console.error(e);
     }
@@ -1047,6 +1103,100 @@ export const App: React.FC = () => {
     }
 
     handleScheduleTask(habitId, selectedDate || todayStr, targetTime, duration);
+  };
+
+  // Convert habit into a concrete action task for today (linked and synchronized)
+  const handleConvertHabitToTodayTask = async (habit: Task) => {
+    if (!auth) return;
+
+    // Check if an action task for today already exists for this habit
+    const existingAction = tasks.find(
+      (t) =>
+        t.habit_id === habit.id &&
+        (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr)
+    );
+    if (existingAction) {
+      setMindfulReflection(
+        `⚡ ${habit.title}: ${t.habitActionAlreadyExistsToast || "Aquest hàbit ja té la seva acció d'avui activa a la columna de tasques."}`
+      );
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 6000);
+      return;
+    }
+
+    try {
+      const payload: any = {
+        title: habit.title,
+        habit_id: habit.id,
+        project_id: habit.project_id || null,
+        type: 'todo',
+        time_of_day: habit.time_of_day || 'anytime',
+        difficulty: habit.difficulty || 'easy',
+        difficulty_weight: habit.difficulty_weight || 2,
+        notes: habit.notes || '',
+        tags: [...(habit.tags || []), 'habit-action'],
+        due_date: todayStr,
+        scheduled_duration: habit.scheduled_duration || 30,
+        micro_habit_title: habit.micro_habit_title || null,
+        subtasks: (habit.subtasks || []).map((s, idx) => ({
+          id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sub_${Date.now()}_${idx}`,
+          title: s.title,
+          completed: 0,
+          position: idx,
+        })),
+      };
+
+      const tempId = 'task_' + Math.random().toString(36).slice(2, 9);
+      const optimisticTask: Task = {
+        id: tempId,
+        habit_id: habit.id,
+        user_id: auth.username,
+        title: payload.title,
+        project_id: payload.project_id,
+        type: 'todo',
+        time_of_day: payload.time_of_day,
+        difficulty: payload.difficulty,
+        difficulty_weight: payload.difficulty_weight,
+        notes: payload.notes,
+        tags: payload.tags,
+        due_date: todayStr,
+        scheduled_duration: payload.scheduled_duration,
+        micro_habit_title: payload.micro_habit_title,
+        subtasks: payload.subtasks,
+        streak: 0,
+        completed: 0,
+        is_due_today: true,
+        project_name: habit.project_name,
+        project_color: habit.project_color,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      setTasks((prev) => [optimisticTask, ...prev]);
+
+      if (soundEnabled) {
+        playPeacefulChime();
+      }
+      setMindfulReflection(`🌱 ${habit.title}: ${t.habitActionCreatedToast || "Acció d'avui creada! En completar-la es registrarà el teu hàbit."}`);
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 6000);
+
+      const created = await fetchJson('/api/v1/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': auth.apiKey,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (created && created.id) {
+        setTasks((prev) => prev.map((item) => (item.id === tempId ? created : item)));
+      }
+      await fetchTasks();
+    } catch (e) {
+      console.error('Error creating habit today action task:', e);
+    }
   };
 
   // Focus Pacing: 1-click block focus session onto today's agenda
@@ -1711,15 +1861,26 @@ export const App: React.FC = () => {
         </main>
       )}
 
-      {/* VIEW 2: TASKS + AGENDA (DEFAULT: Tasks column on left, Agenda on right) */}
+      {/* VIEW 2: TASKS + AGENDA / BOARD VIEW (Shows Habits + Tasks + Agenda on XL, segmented left column on LG, and 3-tab on Mobile) */}
       {viewMode === 'tasks_agenda' && (
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4">
-          {/* Mobile Segmented Control */}
+        <main className="flex-1 max-w-[1720px] w-full mx-auto p-4">
+          {/* Mobile Segmented Control with Habits, Tasks, and Agenda */}
           <div className="lg:hidden flex items-center justify-center p-1 bg-stone-100 dark:bg-stone-800 rounded-xl mb-4 border border-stone-200 dark:border-stone-700">
             <button
               type="button"
+              onClick={() => setMobileTasksAgendaTab('habits')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
+                mobileTasksAgendaTab === 'habits'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                  : 'text-stone-500 dark:text-stone-400'
+              }`}
+            >
+              <span>🔁 Habits ({habitsList.length})</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setMobileTasksAgendaTab('tasks')}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
                 mobileTasksAgendaTab === 'tasks'
                   ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
                   : 'text-stone-500 dark:text-stone-400'
@@ -1730,7 +1891,7 @@ export const App: React.FC = () => {
             <button
               type="button"
               onClick={() => setMobileTasksAgendaTab('agenda')}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
                 mobileTasksAgendaTab === 'agenda'
                   ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
                   : 'text-stone-500 dark:text-stone-400'
@@ -1740,9 +1901,11 @@ export const App: React.FC = () => {
             </button>
           </div>
 
-          <div className="hidden lg:grid lg:grid-cols-[410px_1fr] gap-5 items-start">
+          {/* XL Screens: Classic 3-Column Board with Habits + Tasks + Agenda */}
+          <div className="hidden xl:grid xl:grid-cols-[330px_370px_1fr] gap-5 items-start">
+            {renderHabitsColumn()}
             {renderTasksColumn()}
-            <div className="w-full">
+            <div className="w-full min-w-0">
               <AgendaView
                 tasks={tasks}
                 meetings={meetings}
@@ -1773,8 +1936,71 @@ export const App: React.FC = () => {
             </div>
           </div>
 
+          {/* LG Screens (1024px - 1279px): Left Column with quick Tasks/Habits toggle + Right Column Agenda */}
+          <div className="hidden lg:grid xl:hidden lg:grid-cols-[410px_1fr] gap-5 items-start">
+            <div className="space-y-3">
+              <div className="flex items-center p-1 bg-stone-100 dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700">
+                <button
+                  type="button"
+                  onClick={() => setDesktopBoardTab('tasks')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+                    desktopBoardTab === 'tasks'
+                      ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                      : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+                  }`}
+                >
+                  <span>📋 Tasks ({tasksList.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDesktopBoardTab('habits')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+                    desktopBoardTab === 'habits'
+                      ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                      : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+                  }`}
+                >
+                  <span>🔁 Habits ({habitsList.length})</span>
+                </button>
+              </div>
+              {desktopBoardTab === 'tasks' ? renderTasksColumn() : renderHabitsColumn()}
+            </div>
+            <div className="w-full min-w-0">
+              <AgendaView
+                tasks={tasks}
+                meetings={meetings}
+                ghosts={ghosts}
+                selectedDate={selectedDate}
+                selectedProjectId={selectedProjectId}
+                projects={projects}
+                onSelectDate={setSelectedDate}
+                onScoreTask={handleScoreTask}
+                onEditTask={(task) => {
+                  setEditingTask(task);
+                  setTaskModalOpen(true);
+                }}
+                onScheduleTask={handleScheduleTask}
+                onOpenNewTaskModal={(date, start) => {
+                  setEditingTask(null);
+                  setDefaultTaskType('todo');
+                  setModalScheduledDate(date);
+                  setModalScheduledStart(start);
+                  setTaskModalOpen(true);
+                }}
+                onOpenNewMeetingModal={handleOpenNewMeeting}
+                onEditMeeting={handleEditMeeting}
+                onDeleteMeeting={handleDeleteMeeting}
+                onRescheduleMeeting={handleRescheduleMeeting}
+                onUnscheduleTask={handleUnscheduleTask}
+              />
+            </div>
+          </div>
+
+          {/* Mobile Display: Habits or Tasks or Agenda */}
           <div className="lg:hidden">
-            {mobileTasksAgendaTab === 'tasks' ? (
+            {mobileTasksAgendaTab === 'habits' ? (
+              renderHabitsColumn()
+            ) : mobileTasksAgendaTab === 'tasks' ? (
               renderTasksColumn()
             ) : (
               <AgendaView
@@ -2198,8 +2424,13 @@ export const App: React.FC = () => {
       const isDone = Boolean(habit.completed);
       if (zenMode && isDone) return null;
       const tod = (habit.time_of_day || 'anytime') as 'morning' | 'workday' | 'evening' | 'anytime';
-      const isScheduled = Boolean(habit.scheduled_start);
+      const isScheduled = Boolean(habit.scheduled_start && habit.scheduled_date === todayStr);
       const inGrace = isTaskInGracePeriod(habit, todayStr);
+      const todayAction = tasks.find(
+        (t) =>
+          t.habit_id === habit.id &&
+          (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr)
+      );
 
       if (densityMode === 'compact') {
         return (
@@ -2272,6 +2503,33 @@ export const App: React.FC = () => {
                     </button>
                   )}
                 </div>
+              )}
+              {todayAction ? (
+                todayAction.completed ? (
+                  <span
+                    className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 rounded text-[9px] font-semibold flex items-center gap-0.5"
+                    title={t.habitActionDone || '✓ Acció feta'}
+                  >
+                    {t.habitActionDone || '✓ Acció feta'}
+                  </span>
+                ) : (
+                  <span
+                    className="px-1.5 py-0.5 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 rounded text-[9px] font-semibold flex items-center gap-0.5"
+                    title={t.habitActionActive || '⚡ Acció activa'}
+                  >
+                    {t.habitActionActive || '⚡ Acció activa'}
+                  </span>
+                )
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleConvertHabitToTodayTask(habit)}
+                  className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/70 rounded text-[9px] font-semibold transition flex items-center gap-0.5"
+                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'acció d'avui per aquest hàbit"}
+                >
+                  <ListPlus className="w-2.5 h-2.5" />
+                  <span>{t.convertHabitToTodayTask || "+ Acció d'avui"}</span>
+                </button>
               )}
               <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
                 {habit.difficulty === 'trivial' ? 'XS' : habit.difficulty === 'easy' ? 'S' : habit.difficulty === 'medium' ? 'M' : 'L'}
@@ -2535,6 +2793,34 @@ export const App: React.FC = () => {
                 <span className="hidden sm:inline">Goblin</span>
               </button>
 
+              {todayAction ? (
+                todayAction.completed ? (
+                  <span
+                    className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/90 dark:border-emerald-800 px-2 py-0.5 rounded font-medium flex items-center gap-1"
+                    title={t.habitActionDone || '✓ Acció feta'}
+                  >
+                    {t.habitActionDone || '✓ Acció feta'}
+                  </span>
+                ) : (
+                  <span
+                    className="text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200/90 dark:border-purple-800 px-2 py-0.5 rounded font-medium flex items-center gap-1"
+                    title={t.habitActionActive || '⚡ Acció activa'}
+                  >
+                    {t.habitActionActive || '⚡ Acció activa'}
+                  </span>
+                )
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleConvertHabitToTodayTask(habit)}
+                  className="text-[10px] text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/90 dark:border-indigo-800 px-2 py-0.5 rounded font-medium transition flex items-center gap-1"
+                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'acció d'avui per aquest hàbit"}
+                >
+                  <ListPlus className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>{t.convertHabitToTodayTask || "+ Acció d'avui"}</span>
+                </button>
+              )}
+
               {!isScheduled ? (
                 <button
                   onClick={() => handleQuickScheduleHabitToAgenda(habit.id)}
@@ -2788,7 +3074,10 @@ export const App: React.FC = () => {
           setIsDragOverTasks(false);
           const id = e.dataTransfer.getData('text/plain') || draggedTaskId;
           if (id) {
-            if (taskTab === 'todo') {
+            const droppedTask = tasks.find((t) => t.id === id);
+            if (droppedTask && (droppedTask.type === 'habit' || droppedTask.type === 'daily')) {
+              handleConvertHabitToTodayTask(droppedTask);
+            } else if (taskTab === 'todo') {
               handleSetTaskDate(id, selectedDate);
             } else if (taskTab === 'without_timeline') {
               handleSetTaskDate(id, null);
@@ -2909,6 +3198,8 @@ export const App: React.FC = () => {
                     className={`px-3 py-2 rounded-xl border transition shadow-2xs flex items-center justify-between gap-2.5 cursor-pointer select-none ${
                       isDone
                         ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-60'
+                        : task.habit_id
+                        ? 'bg-purple-50/20 dark:bg-purple-950/20 border-purple-200/90 dark:border-purple-800/80 hover:border-purple-400'
                         : 'bg-white dark:bg-stone-800 border-stone-200/90 dark:border-stone-700/80 hover:border-indigo-300'
                     }`}
                   >
@@ -2928,6 +3219,11 @@ export const App: React.FC = () => {
                           <Circle className="w-4 h-4" />
                         )}
                       </button>
+                      {task.habit_id && (
+                        <span className="text-[10px] text-purple-600 dark:text-purple-400 shrink-0 font-bold" title={t.habitActionBadge || "Acció d'hàbit"}>
+                          🔁
+                        </span>
+                      )}
                       <span className={`text-xs font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>
                         {task.title}
                       </span>
@@ -2984,6 +3280,8 @@ export const App: React.FC = () => {
                   className={`p-3 rounded-xl border transition shadow-2xs cursor-grab active:cursor-grabbing ${
                     isDone
                       ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-70'
+                      : task.habit_id
+                      ? 'bg-purple-50/20 border-purple-200/90 hover:border-purple-300'
                       : 'bg-white border-stone-200/90 hover:border-stone-300'
                   }`}
                 >
@@ -3059,6 +3357,25 @@ export const App: React.FC = () => {
                           {task.notes}
                         </p>
                       )}
+
+                      {/* Habit Action Indicator */}
+                      {task.habit_id && (() => {
+                        const parentHabit = tasks.find((h) => h.id === task.habit_id);
+                        return (
+                          <div className="mt-1 flex items-center justify-between gap-1 text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800 font-medium">
+                            <div className="flex items-center gap-1 truncate">
+                              <span>🔁</span>
+                              <span className="font-semibold">{t.habitActionBadge || "Acció d'hàbit"}:</span>
+                              <span className="truncate">{parentHabit ? parentHabit.title : ''}</span>
+                            </div>
+                            {parentHabit && (parentHabit.streak !== undefined || parentHabit.counter_up !== undefined) && (
+                              <span className="shrink-0 text-amber-600 dark:text-amber-400 font-bold">
+                                🔥 {parentHabit.streak || parentHabit.counter_up || 0}d
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Habit Stacking Cue Pill */}
                       {task.anchor_habit_title && (
