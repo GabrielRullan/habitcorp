@@ -2424,7 +2424,6 @@ export const App: React.FC = () => {
       const isDone = Boolean(habit.completed);
       if (zenMode && isDone) return null;
       const tod = (habit.time_of_day || 'anytime') as 'morning' | 'workday' | 'evening' | 'anytime';
-      const isScheduled = Boolean(habit.scheduled_start && habit.scheduled_date === todayStr);
       const inGrace = isTaskInGracePeriod(habit, todayStr);
       const todayAction = tasks.find(
         (t) =>
@@ -2765,20 +2764,8 @@ export const App: React.FC = () => {
             </div>
           )}
 
-          {/* Agenda Time-Blocking & Drag Handle Bar */}
+          {/* Action Footer Bar */}
           <div className="flex items-center justify-between gap-1.5 mt-2 pt-1.5 border-t border-stone-100 text-[10px]">
-            <div className="flex items-center gap-1.5">
-              {isScheduled ? (
-                <span className="flex items-center gap-1 font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-mono">
-                  <Clock className="w-3 h-3 text-emerald-600" />
-                  <span>{habit.scheduled_start}</span>
-                  <span className="text-[9px] text-emerald-600">({habit.scheduled_duration || 30}m)</span>
-                </span>
-              ) : (
-                <span className="text-stone-400 italic">Not scheduled</span>
-              )}
-            </div>
-
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -2792,7 +2779,9 @@ export const App: React.FC = () => {
                 <span>👺</span>
                 <span className="hidden sm:inline">Goblin</span>
               </button>
+            </div>
 
+            <div className="flex items-center gap-1">
               {todayAction ? (
                 todayAction.completed ? (
                   <span
@@ -2820,29 +2809,6 @@ export const App: React.FC = () => {
                   <span>{t.convertHabitToTodayTask || "+ Acció d'avui"}</span>
                 </button>
               )}
-
-              {!isScheduled ? (
-                <button
-                  onClick={() => handleQuickScheduleHabitToAgenda(habit.id)}
-                  className="text-[10px] text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2 py-0.5 rounded font-medium transition flex items-center gap-0.5"
-                  title={`Schedule to ${tod} slot on today's agenda`}
-                >
-                  <Clock className="w-2.5 h-2.5 text-emerald-600" />
-                  <span>+ Agenda</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleUnscheduleTask(habit.id)}
-                  className="text-[10px] text-stone-400 hover:text-stone-700 px-1.5 py-0.5 rounded hover:bg-stone-100 transition"
-                  title="Remove from agenda"
-                >
-                  Clear
-                </button>
-              )}
-
-              <span title="Drag onto Agenda slot">
-                <GripVertical className="w-3.5 h-3.5 text-stone-400 shrink-0 cursor-grab hover:text-stone-600 ml-1" />
-              </span>
             </div>
           </div>
         </div>
