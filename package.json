@@ -9,7 +9,7 @@
     "dev:client": "vite",
     "build": "vite build",
     "start": "NODE_ENV=production tsx src/server/index.ts",
-    "test": "vitest run"
+    "test": "vitest run --fileParallelism=false"
   },
   "dependencies": {
     "cors": "^2.8.5",

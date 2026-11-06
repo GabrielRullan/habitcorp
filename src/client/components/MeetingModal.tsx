@@ -76,6 +76,16 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
   const { t } = useTranslation();
   const isEditing = Boolean(initialMeeting?.id);
 
+  // Escape key handler for keyboard accessibility
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
@@ -188,6 +198,14 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
     e.preventDefault();
     if (!title.trim()) return;
 
+    if (meetingUrl.trim()) {
+      const lower = meetingUrl.trim().toLowerCase();
+      if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
+        alert('Meeting URL must begin with http:// or https://');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const startIso = `${date}T${startTime}:00.000Z`;
@@ -286,7 +304,7 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Architecture Alignment, School Run, Dentist..."
+              placeholder={t.eventTitlePlaceholder}
               className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-400 focus:bg-white transition"
               autoFocus
             />
@@ -373,23 +391,23 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-indigo-950 flex items-center gap-1.5">
                 <Repeat className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Periodicity / Recurrence</span>
+                <span>{t.periodicityTitle}</span>
               </label>
               {recurrence !== 'none' && (
                 <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100/80 border border-indigo-200 px-2 py-0.5 rounded-full">
-                  Periodical Event
+                  {t.eventPeriodicalBadge}
                 </span>
               )}
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-xs">
               {[
-                { id: 'none' as EventRecurrence, label: 'One-time' },
-                { id: 'daily' as EventRecurrence, label: 'Every Day' },
-                { id: 'weekdays' as EventRecurrence, label: 'Weekdays (Mon–Fri)' },
-                { id: 'weekly' as EventRecurrence, label: 'Weekly' },
-                { id: 'custom_days' as EventRecurrence, label: 'Specific Days' },
-                { id: 'monthly' as EventRecurrence, label: 'Monthly' },
+                { id: 'none' as EventRecurrence, label: t.recurrenceOneTime },
+                { id: 'daily' as EventRecurrence, label: t.periodEveryDay },
+                { id: 'weekdays' as EventRecurrence, label: t.periodWeekdays },
+                { id: 'weekly' as EventRecurrence, label: t.recurrenceWeekly },
+                { id: 'custom_days' as EventRecurrence, label: t.periodSpecificDays },
+                { id: 'monthly' as EventRecurrence, label: t.recurrenceMonthly },
               ].map((opt) => (
                 <button
                   key={opt.id}
@@ -409,10 +427,10 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
             {recurrence === 'custom_days' && (
               <div className="pt-1">
                 <span className="block text-[10px] font-semibold text-stone-500 uppercase tracking-wider mb-1">
-                  Repeat on Days
+                  {t.repeatOnDaysLabel}
                 </span>
                 <div className="flex gap-1">
-                  {WEEKDAYS.map((wd) => {
+                  {(t.weekdaysShort || WEEKDAYS).map((wd) => {
                     const active = repeatDays.includes(wd.value);
                     return (
                       <button
@@ -436,7 +454,7 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
             {recurrence !== 'none' && (
               <div className="pt-1 flex items-center justify-between gap-2 border-t border-indigo-100/80">
                 <label className="text-[11px] text-stone-600 font-medium">
-                  Repeat Until <span className="text-stone-400 font-normal">(optional)</span>:
+                  {t.repeatUntilLabel}
                 </label>
                 <div className="flex items-center gap-1.5">
                   <input
@@ -453,7 +471,7 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
                       className="text-[10px] text-stone-400 hover:text-stone-700 px-1.5 py-0.5 rounded hover:bg-stone-100"
                       title="Clear end date (repeat indefinitely)"
                     >
-                      Clear
+                      {t.clearBtn}
                     </button>
                   )}
                 </div>
@@ -472,7 +490,7 @@ export const MeetingModal: React.FC<MeetingModalProps> = ({
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="e.g. Room 3B, Home, Gym..."
+                placeholder={t.eventLocationPlaceholder}
                 className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-400 focus:bg-white transition"
               />
             </div>

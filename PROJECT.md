@@ -1,109 +1,125 @@
-# Project: Cadence WFH Enhancements
+# Project: Cadence UI Production Refinement
 
 ## Architecture
-Cadence is a modern task, habit, and agenda manager tailored for high-agency knowledge workers. It uses:
-- **Frontend**: React 19 SPA, TypeScript, Tailwind CSS v4, Lucide React icons, Vite 6 build system. Soft pastel light theme (`bg-stone-50`, `border-stone-200`, `text-indigo-700`, `bg-emerald-50`).
-- **Backend**: Express 5.1 REST API, Node.js native `node:sqlite` (`DatabaseSync`) in WAL mode, multi-user isolation with Bearer/API key auth.
-- **Persistence**: Single table `tasks` cleanly stores both one-off tasks (`todo`), periodicals (`daily`), and recurring habits (`habit`).
-- **Integration**: Ghost calendars (spouse/family schedule overlay in pink dashed borders), Projects strip, Agent REST API with batch ingestion (`/api/v1/tasks/batch`).
-
-Enhancements for Work-From-Home (WFH) users introduce:
-1. `time_of_day` taxonomy (`morning`, `workday`, `evening`, `anytime`) across database schema, REST API, batch ingestion, client models, and habit filtering UI.
-2. Direct Habit Time-Blocking on the Agenda time-grid via drag-and-drop and 1-click scheduling, displaying scheduled habits with distinct routine styling (`🌱 Routine`, streak counts, checklist progress) without converting them into one-off tasks.
-3. Work & Break Focus Pacing session widget (25m/5m, 50m/10m) with live timer, pastel progress bar, hydration & stretch cues, and 1-click agenda time-blocking.
-4. Comprehensive Vitest test suite and browser automation verifying all 4 WFH user stories without regressions.
+Cadence is an ADHD-friendly, non-gamified task, habit, and agenda manager tailored for high-agency knowledge workers.
+- **Frontend**: React 19 SPA, TypeScript, Tailwind CSS v4, Lucide React icons, Vite 6 build system.
+- **State & Layout**: `src/client/App.tsx` is the primary desktop shell orchestrating views (`habits_tasks`, `tasks_agenda`, `agenda`), modals, and filter states.
+- **Internationalization**: `I18nContext.tsx` provides custom translation context with strongly-typed `translations.ts` supporting Catalan (`ca`), Spanish (`es`), and English (`en`). Key parity is strictly tested in `tests/i18n.test.ts`.
+- **Backend & Agent API**: Express 5.1 REST API, SQLite (`DatabaseSync`), Bearer/API key auth, OpenAPI 3.1 schema.
 
 ---
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| F1 | WFH User Stories Documentation | 4 concrete stories (Morning Kickoff, Workday Pacing/Health, Ghost Commitments, Shutdown Routine) | E2E Track | ORIGINAL_REQUEST §R1 |
-| F2 | Database Schema Migration | Add `time_of_day` column to `tasks` table with safe `ALTER TABLE` migration | M1 | ORIGINAL_REQUEST §R2 |
-| F3 | REST API `time_of_day` Support | Update `GET`, `POST`, `POST /batch`, `PATCH /tasks/:id` and OpenAPI spec | M1 | ORIGINAL_REQUEST §R2 |
-| F4 | Habit Time-of-Day Filter & Modal UI | Time-of-day tabs/filters in Habits column and selection pills in `TaskModal.tsx` | M2 | ORIGINAL_REQUEST §R2 |
-| F5 | Habit Agenda Time-Blocking | Drag-and-drop & 1-click scheduling for habits to Agenda grid without task conversion | M2 | ORIGINAL_REQUEST §R3 |
-| F6 | Routine Grid Indicators | Distinct styling for scheduled routines in `AgendaView.tsx` with streak & checklist progress | M2 | ORIGINAL_REQUEST §R3 |
-| F7 | Work & Break Focus Pacing Widget | Non-gamified pastel timer (25/5, 50/10) with hydration and stretch reminders | M3 | ORIGINAL_REQUEST §R4 |
-| F8 | Focus Block Agenda 1-Click Scheduling | Schedule active or upcoming focus session directly onto today's Agenda time-grid | M3 | ORIGINAL_REQUEST §R4 |
-| F9 | WFH Automated Vitest Suites | Comprehensive test suites testing all 4 user stories, API endpoints, and ghost interactions | E2E / Final | ORIGINAL_REQUEST §R5 |
-| F10 | Browser Automation & Visual QA | Headless browser verification of WFH UI flows, drag-and-drop, and pastel styling | Final | ORIGINAL_REQUEST §R5 |
+| 1 | Top Header Cleanup | Remove login, language selector, tools (Pomodoro, Calendar, Spotlight, Brain Dump, Shutdown, Chimes, Tutorial, Theme) from `<header>` | M1 | ORIGINAL_REQUEST §R1 |
+| 2 | Desktop Navigation Sidebar | Create collapsible/icon-rail `<Sidebar />` with action triggers, tools, system color selector, language picker, and auth | M1 | ORIGINAL_REQUEST §R1 |
+| 3 | Goblin Brain Sidebar Launcher | Add Goblin Brain trigger to sidebar opening `GoblinBrainModal` with `task=null` for global initiation | M1 | ORIGINAL_REQUEST §R1 |
+| 4 | Agent REST API Sidebar Trigger | Move Agent REST API trigger button from header to sidebar | M1 | ORIGINAL_REQUEST §R1 |
+| 5 | System Color Selector in Sidebar | Relocate Theme / System color selector exclusively to sidebar | M1 | ORIGINAL_REQUEST §R1 |
+| 6 | Settings Modal & Tutorial Toggle | Add `SettingsModal` with persistent toggle `showTutorials` to show/hide tutorials dynamically and guard `'?'` shortcut | M2 | ORIGINAL_REQUEST §R2 |
+| 7 | Left Panel Filter Clean & "Actiu/Tot" | Remove redundant project filter from left filter panel; add segmented "actiu/tot" (Active/All) filter hiding completed items when active | M2 | ORIGINAL_REQUEST §R2 |
+| 8 | Spoon System XS–L Restriction | Restrict all spoon sizing options throughout UI strictly to XS, S, M, L (5-15m, 15-30m, 30-60m, 60m+) | M3 | ORIGINAL_REQUEST §R3 |
+| 9 | Agent Guidance Sizing & Spoons | Add internal instruction to Agent REST API system prompt, OpenAPI spec, and docs directing agents never to offer spoons and to use XS–L only | M3 | ORIGINAL_REQUEST §R3 |
+| 10 | Zen Mode Completed Items Hide | Fix Zen mode so that enabling it hides completed habits and completed tasks from view in lists and cards | M4 | ORIGINAL_REQUEST §R4 |
+| 11 | Pomodoro & Time Timer i18n | Translate Pomodoro timer, analog time timer disk, notifications, and tooltips into ca, es, en | M5 | ORIGINAL_REQUEST §R5 |
+| 12 | Spotlight Modal i18n | Wire `useTranslation` into `SpotlightModal.tsx` and translate focus mode, timer, step navigation, and prompts into ca, es, en | M5 | ORIGINAL_REQUEST §R5 |
+| 13 | Brain Dump Modal i18n | Wire `useTranslation` into `BrainDumpDrawer.tsx` and translate title, description, actions, and buttons into ca, es, en | M5 | ORIGINAL_REQUEST §R5 |
+| 14 | Calendars & Ghosts Modal i18n | Translate all tabs (Ghosts, Feeds, Manual Meeting, Raw Import), accordion, buttons, and notifications into ca, es, en | M5 | ORIGINAL_REQUEST §R5 |
+| 15 | Automated Verification & Build | Verify full Vitest suite (`npm test`), production build (`npm run build`), and browser UI interaction | Final | ORIGINAL_REQUEST Acceptance Criteria |
 
 ---
 
 ## Milestones
 
-| # | Track / Name | Scope | Dependencies | Status |
-|---|--------------|-------|-------------|--------|
-| E2E | E2E Testing Track | Design & implement WFH user stories documentation (`docs/wfh-user-stories.md`), test infra, test suites `tests/wfh_stories.test.ts`, publish `TEST_READY.md` | none | **DONE** |
-| M1 | Backend Schema & REST API | `src/server/db.ts`, `src/server/routes/api.ts`: add `time_of_day` migration, query filtering, batch creation, OpenAPI 3.1 update | none | **DONE** |
-| M2 | Habit Time-of-Day & Agenda Time-Blocking | `src/client/types.ts`, `src/client/App.tsx`, `src/client/components/TaskModal.tsx`, `src/client/components/AgendaView.tsx`: time-of-day habit grouping, habit drag-and-drop, 1-click schedule, routine badges | M1 | **DONE** |
-| M3 | Work & Break Pacing (Focus Blocks) | `src/client/components/FocusPacingBar.tsx`, integration into `App.tsx`: timer presets (25/5, 50/10), reminder cues, 1-click block on agenda | M2 | **DONE** |
-| Final | Final Milestone & Victory Verification | Phase 1: 100% E2E test pass across all tiers. Phase 2: Puppeteer visual testing, production build verification, no regressions | E2E, M1, M2, M3 | **DONE** |
+| # | Name | Scope | Dependencies | Status |
+|---|------|-------|-------------|--------|
+| M1 | Header & Sidebar Reorganization | Remove login, lang picker, tools from top header; implement `<Sidebar />` with Goblin Brain, Agent API, and exclusive System Color Selector | none | **DONE** (Sidebar.tsx, GoblinBrainModal dual-mode, 248 tests passed) |
+| M2 | Settings & Filter Adjustments | Implement `SettingsModal` with tutorial toggle; remove left project filter and add segmented "Actiu / Tot" filter | M1 | **DONE** (SettingsModal.tsx, left strip Actiu/Tot, i18n parity, 314 tests passed) |
+| M3 | Spoon System & Agent Guidance | Restrict spoon sizing to XS through L across UI; add internal agent instructions to system prompt and API spec | none | **DONE** (difficulty.ts, QuickTaskBar.tsx, AgentApiModal.tsx, OpenAPI spec, 431 tests passed) |
+| M4 | Zen Mode Fix | Hide completed habits and completed tasks in Zen mode across all lists and card renderers with persistence and keyboard shortcut | none | **DONE** (App.tsx 4-tier suppression, Sidebar toggle, tests/zen_mode.test.ts, 551 tests passed) |
+| M5 | Modal Internationalization | Translate Pomodoro, Spotlight, Brain Dump, and Calendar modals in ca, es, en with 100% key parity in `translations.ts` | none | **DONE** (Pomodoro, TimeTimer, Spotlight, BrainDump, CalendarModal, translations.ts, tests/modal_i18n.test.ts, 613 tests passed) |
+| Final | Final Verification & Quality Gate | Pass 100% Vitest tests (`npm test`), verify production build (`npm run build`), and perform overarching forensic audit | M1, M2, M3, M4, M5 | **DONE** (613/613 tests passed, clean build in 2.55s, Forensic Audit CLEAN) |
 
 ---
 
 ## Interface Contracts
 
-### 1. Database Schema (`src/server/db.ts`)
-```sql
-ALTER TABLE tasks ADD COLUMN time_of_day TEXT NOT NULL DEFAULT 'anytime' CHECK (time_of_day IN ('morning', 'workday', 'evening', 'anytime'));
-```
-
-### 2. TypeScript Types (`src/client/types.ts`)
+### 1. Sidebar Contract (`src/client/components/Sidebar.tsx`)
 ```typescript
-export type TimeOfDay = 'morning' | 'workday' | 'evening' | 'anytime';
-
-export interface Task {
-  // Existing fields...
-  time_of_day?: TimeOfDay;
-}
-
-export interface FocusSessionState {
-  mode: 'work' | 'break';
-  workMinutes: number;
-  breakMinutes: number;
-  secondsRemaining: number;
-  isRunning: boolean;
-  linkedRoutineTitle?: string;
+export interface SidebarProps {
+  onOpenGoblin: () => void;
+  onOpenAgentApi: () => void;
+  onOpenPomodoro: () => void;
+  onOpenCalendars: () => void;
+  onOpenSpotlight: () => void;
+  onOpenBrainDump: () => void;
+  onOpenShutdown: () => void;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+  showTutorials: boolean;
+  onOpenTutorial: () => void;
+  onOpenSettings: () => void;
+  theme: 'light' | 'dark' | 'system';
+  onCycleTheme: () => void;
+  auth: { username: string; apiKey?: string } | null;
+  onOpenAuth: () => void;
+  onLogout: () => void;
+  zenMode?: boolean;
+  onToggleZenMode?: () => void;
 }
 ```
 
-### 3. REST API Endpoints (`src/server/routes/api.ts`)
-- `GET /api/v1/tasks?time_of_day=morning|workday|evening|anytime`
-- `POST /api/v1/tasks`: Payload accepts `time_of_day?: TimeOfDay` (default `'anytime'`)
-- `POST /api/v1/tasks/batch`: Each task item accepts `time_of_day?: TimeOfDay`
-- `PATCH /api/v1/tasks/:id`: Payload accepts `time_of_day?: TimeOfDay`
+### 2. Settings Modal Contract (`src/client/components/SettingsModal.tsx`)
+```typescript
+export interface SettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  showTutorials: boolean;
+  onToggleTutorials: (show: boolean) => void;
+  theme: 'light' | 'dark' | 'system';
+  onCycleTheme: () => void;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+}
+```
 
-### 4. Agenda Habit Time-Blocking Contract
-- Habits scheduled on the Agenda keep `type: 'habit' | 'daily'`.
-- Fields `scheduled_date: 'YYYY-MM-DD'`, `scheduled_start: 'HH:MM'`, and `scheduled_duration: number` represent the allocated agenda time block.
-- In `AgendaView.tsx`, cards with `type === 'habit' || type === 'daily'` render with:
-  - Routine icon (`🌱` or `☀️` or `🌙`)
-  - "Routine" badge with `time_of_day` pill
-  - Habit streak count (`🔥 Xd streak`) or counters (`+/-`)
-  - Checklist subtasks progress if subtasks are present.
+### 3. Filter State Contract (`src/client/App.tsx`)
+```typescript
+// Active / All filter state:
+const [activeFilter, setActiveFilter] = useState<'active' | 'all'>('active');
+
+// Filtering logic in filteredTasks:
+if (activeFilter === 'active' && Boolean(t.completed)) return false;
+
+// Zen mode state:
+const [zenMode, setZenMode] = useState<boolean>(() => {
+  try { return localStorage.getItem('habitcorp_zen_mode') === 'true'; } catch { return false; }
+});
+// When zenMode === true: always hide completed items in baseHabitsList, allTasksList, and card renderers.
+```
+
+### 4. Agent REST API System Prompt Contract (`src/client/components/AgentApiModal.tsx`)
+```text
+INTERNAL AGENT INSTRUCTIONS:
+- Task sizing must strictly adhere to: XS (trivial, 5-15m), S (easy, 15-30m), M (medium, 30-60m), or L (hard, 60m+).
+- Never offer or mention spoons to the user under any circumstances. Present effort solely through standard sizing (XS, S, M, L) and time durations.
+```
 
 ---
 
 ## Code Layout & Exclusive File Ownership
 
-To prevent merge conflicts and concurrent file writes across milestones:
-- **E2E Testing Track**:
-  - `docs/wfh-user-stories.md`
-  - `tests/wfh_stories.test.ts`
-  - `TEST_INFRA.md`
-  - `TEST_READY.md`
-- **Milestone 1 (Backend)**:
-  - `src/server/db.ts`
-  - `src/server/routes/api.ts`
-- **Milestone 2 (Habit Time-of-Day & Agenda Time-Blocking)**:
-  - `src/client/types.ts`
-  - `src/client/components/TaskModal.tsx`
-  - `src/client/components/AgendaView.tsx`
-  - `src/client/App.tsx` (Habits column & drag handlers)
-- **Milestone 3 (Work & Break Pacing)**:
-  - `src/client/components/FocusPacingBar.tsx` (new component)
-  - `src/client/App.tsx` (header integration)
-- **Final Milestone**:
-  - Comprehensive test execution, browser verification via Puppeteer MCP, and `npm run build`.
+- **Milestone 1 (Header & Sidebar Reorganization)**:
+  - Exclusive: `src/client/components/Sidebar.tsx` (new)
+  - Shared edit: `src/client/App.tsx` (header cleanup & sidebar mount)
+- **Milestone 2 (Settings & Filter Adjustments)**:
+  - Exclusive: `src/client/components/SettingsModal.tsx` (new)
+  - Shared edit: `src/client/App.tsx` (filter strip controls & activeFilter state)
+- **Milestone 3 (Spoon Simplification & Agent Guidance)**:
+  - Exclusive: `src/client/components/QuickTaskBar.tsx`, `src/client/utils/difficulty.ts`, `src/client/components/AgentApiModal.tsx`, `src/server/routes/api.ts`
+- **Milestone 4 (Zen Mode Fix)**:
+  - Exclusive: `tests/zen_mode.test.ts` (new)
+  - Shared edit: `src/client/App.tsx` (zen mode state and item filter suppression)
+- **Milestone 5 (Modal Internationalization)**:
+  - Exclusive: `src/client/components/PomodoroTimer.tsx`, `src/client/components/TimeTimerDisk.tsx`, `src/client/components/SpotlightModal.tsx`, `src/client/components/BrainDumpDrawer.tsx`, `src/client/components/CalendarModal.tsx`, `src/client/i18n/translations.ts`

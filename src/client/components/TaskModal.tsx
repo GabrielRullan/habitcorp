@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Task, TaskType, DifficultyTier, HabitResetPeriod, DailyFrequency, Project, TimeOfDay } from '../types';
+import { DIFFICULTY_LIST, DIFFICULTY_CONFIGS } from '../utils/difficulty';
+import { useTranslation } from '../i18n/I18nContext';
 import { X, Plus, Trash2, Calendar, Clock, CheckSquare, Sparkles, Tag, ArrowRight, FolderPlus } from 'lucide-react';
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (taskData: any) => Promise<void>;
+  onDelete?: (taskId: string) => Promise<void>;
   initialTask?: Task | null;
   defaultType?: TaskType;
   defaultScheduledDate?: string;
@@ -14,6 +17,7 @@ interface TaskModalProps {
   defaultTimeOfDay?: TimeOfDay;
   projects?: Project[];
   onCreateProject?: (name: string, color: string) => Promise<string | undefined>;
+  existingHabits?: Task[];
 }
 
 const WEEKDAYS = [
@@ -30,6 +34,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  onDelete,
   initialTask,
   defaultType = 'todo',
   defaultScheduledDate,
@@ -38,7 +43,55 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   defaultTimeOfDay,
   projects = [],
   onCreateProject,
+  existingHabits = [],
 }) => {
+  const { t } = useTranslation();
+
+  const getDifficultyInfo = (tier: DifficultyTier) => {
+    switch (tier) {
+      case 'trivial':
+        return { label: t.diffTierTrivialLabel, hint: t.diffTierTrivialHint };
+      case 'easy':
+        return { label: t.diffTierEasyLabel, hint: t.diffTierEasyHint };
+      case 'medium':
+        return { label: t.diffTierMediumLabel, hint: t.diffTierMediumHint };
+      case 'hard':
+        return { label: t.diffTierHardLabel, hint: t.diffTierHardHint };
+      default:
+        return { label: '', hint: '' };
+    }
+  };
+
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    setConfirmDelete(false);
+  }, [isOpen, initialTask]);
+
+  const handleDelete = async () => {
+    if (!initialTask || !onDelete) return;
+    setDeleting(true);
+    try {
+      await onDelete(initialTask.id);
+      onClose();
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Escape key listener for keyboard navigation
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   // Simplified choice: 'habit' (recurring) or 'task' (to-do)
   const [kind, setKind] = useState<'habit' | 'task'>(
     defaultType === 'habit' || defaultType === 'daily' ? 'habit' : 'task'
@@ -47,6 +100,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [difficulty, setDifficulty] = useState<DifficultyTier>('easy');
+  const diffInfo = getDifficultyInfo(difficulty);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('anytime');
   const [tagsInput, setTagsInput] = useState('');
   const [projectId, setProjectId] = useState<string>('');
@@ -62,6 +116,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [repeatDays, setRepeatDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [habitPositive, setHabitPositive] = useState(true);
   const [habitNegative, setHabitNegative] = useState(false);
+  const [anchorTaskId, setAnchorTaskId] = useState<string>('');
+  const [anchorHabitTitle, setAnchorHabitTitle] = useState<string>('');
+  const [microHabitTitle, setMicroHabitTitle] = useState<string>('');
 
   // Task settings: 'none' | 'today' | 'custom'
   const [taskTimelineMode, setTaskTimelineMode] = useState<'none' | 'today' | 'custom'>('none');
@@ -80,6 +137,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [saving, setSaving] = useState(false);
 
   const todayStr = new Date().toISOString().slice(0, 10);
+  const tomorrowStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, []);
 
   useEffect(() => {
     if (initialTask) {
@@ -94,6 +156,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
       setHabitPositive(Boolean(initialTask.habit_positive));
       setHabitNegative(Boolean(initialTask.habit_negative));
+      setAnchorTaskId(initialTask.anchor_task_id || '');
+      setAnchorHabitTitle(initialTask.anchor_habit_title || '');
+      setMicroHabitTitle(initialTask.micro_habit_title || '');
 
       if (initialTask.frequency === 'daily') {
         setPeriodicity('daily');
@@ -148,6 +213,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setRepeatDays([1, 2, 3, 4, 5]);
       setHabitPositive(true);
       setHabitNegative(false);
+      setAnchorTaskId('');
+      setAnchorHabitTitle('');
+      setMicroHabitTitle('');
 
       if (defaultScheduledDate) {
         setTaskTimelineMode(defaultScheduledDate === todayStr ? 'today' : 'custom');
@@ -264,6 +332,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         payload.scheduled_date = null;
         payload.scheduled_start = null;
       }
+
+      // Habit Stacking (BJ Fogg Cue Anchoring)
+      payload.anchor_task_id = anchorTaskId || null;
+      payload.anchor_habit_title = anchorHabitTitle.trim() || '';
+      payload.micro_habit_title = microHabitTitle.trim() || '';
     } else {
       // One-off Task
       payload.type = 'todo';
@@ -302,7 +375,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100 bg-stone-50/60">
           <span className="font-semibold text-base text-stone-800">
-            {initialTask ? 'Edit Item' : kind === 'habit' ? 'New Habit' : 'New Task'}
+            {initialTask ? t.modalEditItemTitle : t.modalNewItemTitle}
           </span>
           <button
             onClick={onClose}
@@ -325,7 +398,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                🌱 Habit (Recurring)
+                {t.itemTabHabit}
               </button>
               <button
                 type="button"
@@ -336,35 +409,104 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                ✓ Task (To-Do)
+                {t.itemTabTask}
               </button>
             </div>
           </div>
 
           {/* Title */}
           <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1">Title</label>
+            <label className="block text-xs font-semibold text-stone-600 mb-1">{t.itemTitleLabel}</label>
             <input
               type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={kind === 'habit' ? 'e.g. Daily 20m Anki flashcards or Drink 2L water' : 'e.g. Complete chapter 4 exercise'}
+              placeholder={kind === 'habit' ? t.itemTitlePlaceholderHabit : t.itemTitlePlaceholderTask}
               className="w-full bg-white border border-stone-300 rounded-xl px-3.5 py-2 text-sm text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />
+
+            {/* Quick Executive Preset Chips (< 5s initiation barrier) */}
+            <div className="flex items-center gap-1.5 flex-wrap mt-2">
+              <span className="text-[10px] uppercase font-bold text-stone-400 mr-1 select-none">Quick:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setDifficulty('trivial');
+                  setScheduledDuration(15);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                  difficulty === 'trivial'
+                    ? 'bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-200 border-sky-300'
+                    : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+                }`}
+                title="15 min small starter task"
+              >
+                ⚡ 15m XS
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDifficulty('easy');
+                  setScheduledDuration(30);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                  difficulty === 'easy'
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 border-emerald-300'
+                    : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+                }`}
+                title="30 min standard task"
+              >
+                🎯 30m S
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTaskTimelineMode('today');
+                  setDueDate(todayStr);
+                  setScheduledDate(todayStr);
+                  setEnableAgenda(true);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                  scheduledDate === todayStr || (taskTimelineMode === 'today' && !scheduledDate)
+                    ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-200 border-indigo-300'
+                    : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+                }`}
+                title="Schedule for Today"
+              >
+                📅 Today
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTaskTimelineMode('custom');
+                  setDueDate(tomorrowStr);
+                  setScheduledDate(tomorrowStr);
+                  setEnableAgenda(true);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                  scheduledDate === tomorrowStr
+                    ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border-amber-300'
+                    : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+                }`}
+                title="Schedule for Tomorrow"
+              >
+                ⏩ Tomorrow
+              </button>
+            </div>
           </div>
 
           {/* Project Selector (Link habits and tasks together!) */}
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1 flex items-center justify-between">
-              <span>Project (Link Habits & Tasks)</span>
+              <span>{t.itemProjectHeader}</span>
               <button
                 type="button"
                 onClick={() => setShowNewProject(!showNewProject)}
                 className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium"
               >
                 <FolderPlus className="w-3 h-3" />
-                <span>{showNewProject ? 'Cancel' : '+ New Project'}</span>
+                <span>{showNewProject ? t.cancelBtn : t.itemNewProjectBtn}</span>
               </button>
             </label>
 
@@ -375,7 +517,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     type="text"
                     value={newProjName}
                     onChange={(e) => setNewProjName(e.target.value)}
-                    placeholder="Project name (e.g. Chinese learning)"
+                    placeholder={t.itemNewProjectPlaceholder}
                     className="bg-white border border-stone-300 rounded-lg px-3 py-1.5 text-xs text-stone-800 focus:outline-none focus:border-indigo-500"
                   />
                   <input
@@ -392,7 +534,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   disabled={creatingProject || !newProjName.trim()}
                   className="w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition disabled:opacity-50"
                 >
-                  {creatingProject ? 'Creating...' : 'Create & Select Project'}
+                  {creatingProject ? t.itemProjectCreating : t.itemCreateSelectProjectBtn}
                 </button>
               </div>
             ) : (
@@ -401,7 +543,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 onChange={(e) => setProjectId(e.target.value)}
                 className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-800 focus:outline-none focus:border-indigo-500"
               >
-                <option value="">No Project (Standalone)</option>
+                <option value="">{t.itemNoProjectOption}</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     ● {p.name}
@@ -413,42 +555,50 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1">Notes (Optional)</label>
+            <label className="block text-xs font-semibold text-stone-600 mb-1">{t.itemNotesLabelOptional}</label>
             <textarea
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add details, links, or context..."
+              placeholder={t.itemNotesPlaceholder}
               className="w-full bg-white border border-stone-300 rounded-xl px-3.5 py-2 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 resize-none"
             />
           </div>
 
-          {/* Difficulty (Pastel Pills) */}
+          {/* Task Size & Estimated Duration (XS / S / M / L) */}
           <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1.5 flex items-center justify-between">
-              <span>Difficulty</span>
-              <span className="text-[11px] font-normal text-stone-400">Effort level</span>
+            <label className="block text-xs font-semibold text-stone-700 mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span>{t.itemTaskSizeLabel}</span>
+                <span className="text-[10px] text-stone-500 font-normal">{t.itemEstimatedDuration}</span>
+              </span>
+              <span className="text-[11px] font-normal text-stone-500">
+                {diffInfo.label} · {diffInfo.hint} ({DIFFICULTY_CONFIGS[difficulty]?.durationHint})
+              </span>
             </label>
             <div className="grid grid-cols-4 gap-2">
-              {[
-                { id: 'trivial', label: 'Trivial', color: 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-emerald-200' },
-                { id: 'easy', label: 'Easy', color: 'bg-sky-50 text-sky-700 border-sky-300 ring-sky-200' },
-                { id: 'medium', label: 'Medium', color: 'bg-amber-50 text-amber-700 border-amber-300 ring-amber-200' },
-                { id: 'hard', label: 'Hard', color: 'bg-rose-50 text-rose-700 border-rose-300 ring-rose-200' },
-              ].map((tier) => (
-                <button
-                  type="button"
-                  key={tier.id}
-                  onClick={() => setDifficulty(tier.id as DifficultyTier)}
-                  className={`py-1.5 px-2 rounded-xl text-xs font-semibold border text-center transition ${
-                    difficulty === tier.id
-                      ? `${tier.color} ring-2 shadow-xs`
-                      : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'
-                  }`}
-                >
-                  {tier.label}
-                </button>
-              ))}
+              {DIFFICULTY_LIST.map((tier) => {
+                const isSelected = difficulty === tier.id;
+                return (
+                  <button
+                    type="button"
+                    key={tier.id}
+                    onClick={() => setDifficulty(tier.id)}
+                    className={`py-2 px-1.5 rounded-xl border text-center transition flex flex-col items-center justify-center gap-0.5 ${
+                      isSelected
+                        ? tier.selectedClass
+                        : tier.unselectedClass
+                    }`}
+                  >
+                    <span className="text-sm font-extrabold leading-none tracking-tight select-none">
+                      {tier.sizeLabel}
+                    </span>
+                    <span className="text-[10px] font-medium opacity-80">
+                      {tier.durationHint}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -456,39 +606,39 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1.5 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <span>Time of Day</span>
-                <span className="text-[10px] text-stone-400 font-normal">WFH Routine Organization</span>
+                <span>{t.itemTimeOfDayLabel}</span>
+                <span className="text-[10px] text-stone-400 font-normal">{t.itemTimeOfDaySub}</span>
               </span>
               <span className="text-[11px] font-normal text-stone-400">
-                {timeOfDay === 'morning' && 'Kickoff & morning focus'}
-                {timeOfDay === 'workday' && 'Core working hours & pacing'}
-                {timeOfDay === 'evening' && 'Shutdown & evening reflection'}
-                {timeOfDay === 'anytime' && 'Flexible throughout day'}
+                {timeOfDay === 'morning' && t.itemTimeOfDayHintMorning}
+                {timeOfDay === 'workday' && t.itemTimeOfDayHintWorkday}
+                {timeOfDay === 'evening' && t.itemTimeOfDayHintEvening}
+                {timeOfDay === 'anytime' && t.itemTimeOfDayHintAnytime}
               </span>
             </label>
             <div className="grid grid-cols-4 gap-2">
               {[
                 {
                   id: 'morning' as TimeOfDay,
-                  label: 'Morning',
+                  label: t.timeOfDayMorning,
                   icon: '☀️',
                   activeClass: 'bg-amber-50 text-amber-800 border-amber-300 ring-2 ring-amber-200 shadow-xs',
                 },
                 {
                   id: 'workday' as TimeOfDay,
-                  label: 'Workday',
+                  label: t.timeOfDayWorkday,
                   icon: '💼',
                   activeClass: 'bg-sky-50 text-sky-800 border-sky-300 ring-2 ring-sky-200 shadow-xs',
                 },
                 {
                   id: 'evening' as TimeOfDay,
-                  label: 'Evening',
+                  label: t.timeOfDayEvening,
                   icon: '🌙',
                   activeClass: 'bg-purple-50 text-purple-800 border-purple-300 ring-2 ring-purple-200 shadow-xs',
                 },
                 {
                   id: 'anytime' as TimeOfDay,
-                  label: 'Anytime',
+                  label: t.timeOfDayAnytime,
                   icon: '✨',
                   activeClass: 'bg-stone-100 text-stone-800 border-stone-300 ring-2 ring-stone-200 shadow-xs',
                 },
@@ -513,13 +663,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {/* KIND: HABIT SPECIFIC */}
           {kind === 'habit' && (
             <div className="p-4 bg-emerald-50/40 border border-emerald-100 rounded-xl space-y-3">
-              <label className="block text-xs font-semibold text-emerald-900">Periodicity / Recurrence</label>
+              <label className="block text-xs font-semibold text-emerald-900">{t.periodicityTitle}</label>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 {[
-                  { id: 'daily', label: 'Every Day' },
-                  { id: 'weekdays', label: 'Weekdays (Mon–Fri)' },
-                  { id: 'custom_days', label: 'Specific Days' },
-                  { id: 'counter_only', label: 'Flexible (+/- only)' },
+                  { id: 'daily', label: t.periodEveryDay },
+                  { id: 'weekdays', label: t.periodWeekdays },
+                  { id: 'custom_days', label: t.periodSpecificDays },
+                  { id: 'counter_only', label: t.periodFlexibleCounter },
                 ].map((opt) => (
                   <button
                     type="button"
@@ -539,7 +689,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               {periodicity === 'custom_days' && (
                 <div className="pt-2">
                   <div className="flex gap-1">
-                    {WEEKDAYS.map((wd) => {
+                    {(t.weekdaysShort || WEEKDAYS).map((wd) => {
                       const active = repeatDays.includes(wd.value);
                       return (
                         <button
@@ -562,7 +712,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
               {/* Optional +/- Counter Buttons */}
               <div className="pt-2 border-t border-emerald-200/50 flex items-center justify-between">
-                <span className="text-xs text-stone-600 font-medium">Add +/- Counter Buttons:</span>
+                <span className="text-xs text-stone-600 font-medium">{t.counterButtonsLabel}</span>
                 <div className="flex gap-3">
                   <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
                     <input
@@ -571,7 +721,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setHabitPositive(e.target.checked)}
                       className="rounded border-stone-300 text-emerald-600 focus:ring-0"
                     />
-                    <span>(+) Positive</span>
+                    <span>{t.counterPositive}</span>
                   </label>
                   <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
                     <input
@@ -580,7 +730,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setHabitNegative(e.target.checked)}
                       className="rounded border-stone-300 text-rose-600 focus:ring-0"
                     />
-                    <span>(-) Negative</span>
+                    <span>{t.counterNegative}</span>
                   </label>
                 </div>
               </div>
@@ -602,10 +752,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <div className="flex items-center justify-between flex-1">
                     <span className="text-xs font-semibold text-emerald-950 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-emerald-700" />
-                      <span>Block specific time on Agenda grid</span>
+                      <span>{t.blockAgendaSlotLabel}</span>
                     </span>
                     <span className="text-[10px] text-emerald-700 font-medium bg-emerald-100/70 px-2 py-0.5 rounded-md">
-                      🌱 Routine Slot
+                      {t.routineSlotBadge}
                     </span>
                   </div>
                 </label>
@@ -613,7 +763,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 {enableAgenda && (
                   <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-emerald-100">
                     <div>
-                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">Date</label>
+                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">{t.labelDate}</label>
                       <input
                         type="date"
                         value={scheduledDate || todayStr}
@@ -622,7 +772,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">Start Time</label>
+                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">{t.labelStartTime}</label>
                       <input
                         type="time"
                         value={scheduledStart}
@@ -631,7 +781,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">Duration</label>
+                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">{t.labelDuration}</label>
                       <select
                         value={scheduledDuration}
                         onChange={(e) => setScheduledDuration(Number(e.target.value))}
@@ -648,13 +798,86 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Habit Stacking (BJ Fogg Cue Anchoring: "After [Anchor], I will [Routine]") */}
+              <div className="pt-2.5 border-t border-emerald-200/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-emerald-950 dark:text-emerald-300 flex items-center gap-1.5">
+                    <span>🔗</span>
+                    <span>Habit Stacking (BJ Fogg Anchor)</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">
+                    "After [Anchor], I will [Routine]"
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {existingHabits && existingHabits.length > 0 && (
+                    <div>
+                      <label className="text-[10px] font-semibold text-stone-500 block mb-1">Select existing routine:</label>
+                      <select
+                        value={anchorTaskId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAnchorTaskId(val);
+                          const match = existingHabits.find((h) => h.id === val);
+                          if (match) setAnchorHabitTitle(match.title);
+                          else if (!val) setAnchorHabitTitle('');
+                        }}
+                        className="w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-2 py-1.5 text-xs text-stone-800 dark:text-stone-100"
+                      >
+                        <option value="">No anchor (Independent habit)</option>
+                        {existingHabits
+                          .filter((h) => h.id !== initialTask?.id)
+                          .map((h) => (
+                            <option key={h.id} value={h.id}>
+                              After: {h.title}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-[10px] font-semibold text-stone-500 block mb-1">Or type a sensory anchor cue:</label>
+                    <input
+                      type="text"
+                      value={anchorHabitTitle}
+                      onChange={(e) => {
+                        setAnchorHabitTitle(e.target.value);
+                        if (anchorTaskId) setAnchorTaskId('');
+                      }}
+                      placeholder="e.g. Pouring morning coffee, Shutting laptop..."
+                      className="w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-800 dark:text-stone-100 placeholder-stone-400 dark:placeholder-stone-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Micro-Habit / Starter Step (BJ Fogg "Tiny Habits" Minimum Viable Routine) */}
+              <div className="pt-2.5 border-t border-emerald-200/50 dark:border-emerald-800/40 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-emerald-950 dark:text-emerald-300 flex items-center gap-1.5">
+                    <span>🌱</span>
+                    <span>Micro-Habit (Starter Step)</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">
+                    Minimum Viable Routine (&lt; 30 seconds)
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={microHabitTitle}
+                  onChange={(e) => setMicroHabitTitle(e.target.value)}
+                  placeholder="e.g. Put on running shoes, or read 1 sentence"
+                  className="w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-800 dark:text-stone-100 placeholder-stone-400 dark:placeholder-stone-500"
+                />
+              </div>
             </div>
           )}
 
           {/* KIND: TASK SPECIFIC */}
           {kind === 'task' && (
             <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-3">
-              <label className="block text-xs font-semibold text-indigo-900">Timeline / Due Date</label>
+              <label className="block text-xs font-semibold text-indigo-900">{t.timelineTitle}</label>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <button
                   type="button"
@@ -668,7 +891,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
                   }`}
                 >
-                  Without Timeline
+                  {t.timelineNone}
                 </button>
                 <button
                   type="button"
@@ -682,7 +905,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
                   }`}
                 >
-                  📅 Task for Today
+                  {t.timelineToday}
                 </button>
                 <button
                   type="button"
@@ -696,13 +919,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
                   }`}
                 >
-                  Pick Due Date
+                  {t.timelineCustom}
                 </button>
               </div>
 
               {taskTimelineMode === 'custom' && (
                 <div className="pt-2">
-                  <label className="block text-[11px] font-medium text-stone-600 mb-1">Due Date</label>
+                  <label className="block text-[11px] font-medium text-stone-600 mb-1">{t.itemDueDateLabel}</label>
                   <input
                     type="date"
                     required={taskTimelineMode === 'custom'}
@@ -728,13 +951,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       }}
                       className="rounded border-stone-300 text-indigo-600 focus:ring-0"
                     />
-                    <span className="text-xs font-medium text-stone-700">Block specific time on Agenda</span>
+                    <span className="text-xs font-medium text-stone-700">{t.blockAgendaSlotLabel}</span>
                   </label>
 
                   {enableAgenda && (
                     <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-indigo-100">
                       <div>
-                        <label className="block text-[10px] text-stone-500 mb-0.5">Date</label>
+                        <label className="block text-[10px] text-stone-500 mb-0.5">{t.labelDate}</label>
                         <input
                           type="date"
                           value={scheduledDate}
@@ -743,7 +966,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-stone-500 mb-0.5">Start Time</label>
+                        <label className="block text-[10px] text-stone-500 mb-0.5">{t.labelStartTime}</label>
                         <input
                           type="time"
                           value={scheduledStart}
@@ -752,7 +975,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-stone-500 mb-0.5">Duration</label>
+                        <label className="block text-[10px] text-stone-500 mb-0.5">{t.labelDuration}</label>
                         <select
                           value={scheduledDuration}
                           onChange={(e) => setScheduledDuration(Number(e.target.value))}
@@ -776,7 +999,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {/* Subtasks (Checklist) */}
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1.5 flex items-center justify-between">
-              <span>Checklist / Steps ({subtasks.length})</span>
+              <span>{t.checklistTitle(subtasks.length)}</span>
             </label>
 
             {subtasks.length > 0 && (
@@ -810,7 +1033,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     handleAddSubtask();
                   }
                 }}
-                placeholder="Add checklist step..."
+                placeholder={t.checklistPlaceholder}
                 className="flex-1 bg-white border border-stone-300 rounded-xl px-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-500"
               />
               <button
@@ -818,27 +1041,64 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 onClick={handleAddSubtask}
                 className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-medium transition"
               >
-                Add
+                {t.checklistAddBtn}
               </button>
             </div>
           </div>
 
           {/* Action buttons */}
-          <div className="pt-3 border-t border-stone-100 flex items-center justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-stone-500 hover:text-stone-800 rounded-xl transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : initialTask ? 'Update' : kind === 'habit' ? 'Save Habit' : 'Save Task'}
-            </button>
+          <div className="pt-3 border-t border-stone-100 flex items-center justify-between">
+            {initialTask && onDelete ? (
+              confirmDelete ? (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition shadow-xs flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{deleting ? '...' : (t.confirmDeleteBtn || 'Confirm Delete')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="px-2.5 py-1.5 text-xs text-stone-500 hover:text-stone-800 transition"
+                  >
+                    {t.cancelBtn || 'Cancel'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="px-2.5 py-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition flex items-center gap-1 font-medium"
+                  title="Delete this task permanently"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{t.deleteTaskBtn || 'Delete Task'}</span>
+                </button>
+              )
+            ) : (
+              <div />
+            )}
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-medium text-stone-500 hover:text-stone-800 rounded-xl transition"
+              >
+                {t.cancelBtn || 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition disabled:opacity-50"
+              >
+                {saving ? '...' : (t.saveBtn || 'Save')}
+              </button>
+            </div>
           </div>
         </form>
       </div>

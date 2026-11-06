@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, X, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, RotateCcw, X, Volume2, VolumeX, Eye } from 'lucide-react';
 import { useTranslation } from '../i18n/I18nContext';
 import { Task } from '../types';
+import { TimeTimerDisk } from './TimeTimerDisk';
 
 export interface PomodoroTimerProps {
   onBlockOnAgenda?: (title: string, duration: number) => void;
@@ -46,6 +47,7 @@ export const PomodoroTimer: React.FC<PomodoroTimerProps> = ({ onToggleOpen }) =>
   const [secondsRemaining, setSecondsRemaining] = useState(DEFAULT_SECONDS);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [showVisualDisk, setShowVisualDisk] = useState(false);
   const initialTitleRef = useRef<string>('');
 
   useEffect(() => {
@@ -87,7 +89,7 @@ export const PomodoroTimer: React.FC<PomodoroTimerProps> = ({ onToggleOpen }) =>
       const mins = Math.floor(secondsRemaining / 60);
       const secs = secondsRemaining % 60;
       const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-      document.title = `(${formatted}) 🍅 Pomodoro`;
+      document.title = `(${formatted}) 🍅 ${t.pomodoroTitle || 'Pomodoro'}`;
     } else if (initialTitleRef.current) {
       document.title = initialTitleRef.current;
     }
@@ -97,7 +99,7 @@ export const PomodoroTimer: React.FC<PomodoroTimerProps> = ({ onToggleOpen }) =>
         document.title = initialTitleRef.current;
       }
     };
-  }, [isRunning, secondsRemaining]);
+  }, [isRunning, secondsRemaining, t.pomodoroTitle]);
 
   const handleTogglePlay = () => {
     if (isCompleted) {
@@ -136,7 +138,7 @@ export const PomodoroTimer: React.FC<PomodoroTimerProps> = ({ onToggleOpen }) =>
           </div>
           {isCompleted && (
             <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-              Session completed!
+              {t.pomodoroSessionCompleted || 'Session completed!'}
             </span>
           )}
         </div>
@@ -173,16 +175,30 @@ export const PomodoroTimer: React.FC<PomodoroTimerProps> = ({ onToggleOpen }) =>
             type="button"
             onClick={handleReset}
             className="p-1.5 text-stone-500 hover:text-stone-700 hover:bg-stone-100 rounded-xl border border-stone-200/80 transition"
-            title={t.resetPomodoro || 'Reset to 25m'}
+            title={t.pomodoroResetTooltip || t.resetPomodoro || 'Reset to 25m'}
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
           <button
             type="button"
+            onClick={() => setShowVisualDisk(!showVisualDisk)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition ${
+              showVisualDisk
+                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100 border-stone-200'
+            }`}
+            title={t.pomodoroToggleVisualDiskTitle || 'Show / hide visual disk (Time Timer)'}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{t.pomodoroVisualDiskBtn || 'Visual Disk'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setSoundEnabled(!soundEnabled)}
             className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-xl transition"
-            title={soundEnabled ? 'Chime sound enabled' : 'Chime sound muted'}
+            title={soundEnabled ? t.pomodoroSoundEnabled : t.pomodoroSoundMuted}
           >
             {soundEnabled ? (
               <Volume2 className="w-3.5 h-3.5" />
@@ -196,7 +212,7 @@ export const PomodoroTimer: React.FC<PomodoroTimerProps> = ({ onToggleOpen }) =>
               type="button"
               onClick={onToggleOpen}
               className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-xl transition ml-1"
-              title="Close Pomodoro bar"
+              title={t.pomodoroCloseBar || 'Close Pomodoro bar'}
             >
               <X className="w-4 h-4" />
             </button>
@@ -211,6 +227,28 @@ export const PomodoroTimer: React.FC<PomodoroTimerProps> = ({ onToggleOpen }) =>
           style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
         />
       </div>
+
+      {/* Expandable Visual Time Timer Disc Drawer */}
+      {showVisualDisk && (
+        <div className="max-w-md mx-auto mt-4 p-4 bg-stone-50/80 rounded-2xl border border-stone-200/80 flex flex-col items-center justify-center animate-in fade-in duration-200">
+          <div className="flex items-center justify-between w-full pb-2 mb-2 border-b border-stone-200/60">
+            <span className="text-xs font-bold uppercase tracking-wider text-stone-700">
+              {t.pomodoroVisualDiskTitle || 'Analog Visual Disk (Time Timer)'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowVisualDisk(false)}
+              className="text-xs text-stone-400 hover:text-stone-700"
+            >
+              {t.closeBtn || 'Close'}
+            </button>
+          </div>
+          <TimeTimerDisk
+            initialMinutes={25}
+            onComplete={() => alert(t.pomodoroTimeUp || 'Time is up!')}
+          />
+        </div>
+      )}
     </section>
   );
 };

@@ -458,4 +458,68 @@ describe('Cadence API Suite', () => {
     expect(proj).toBeDefined();
     expect(proj.total_tasks).toBe(2);
   });
+
+  it('creates, expands, and updates periodical calendar events across dates', async () => {
+    // 1. Create a weekday recurring event starting Monday 2026-10-26
+    const createRes = await request(app)
+      .post('/api/v1/meetings')
+      .set('X-API-Key', userA.apiKey)
+      .send({
+        title: 'Daily Standup',
+        start_time: '2026-10-26T09:00:00.000Z',
+        end_time: '2026-10-26T09:30:00.000Z',
+        recurrence: 'weekdays',
+        repeat_until: '2026-10-30',
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.recurrence).toBe('weekdays');
+    expect(createRes.body.repeat_days).toEqual([1, 2, 3, 4, 5]);
+    expect(createRes.body.repeat_until).toBe('2026-10-30');
+    const meetingId = createRes.body.id;
+
+    // 2. Query /meetings across full week (Mon Oct 26 to Sun Nov 1) -> should expand to 5 weekday occurrences
+    const weekRes = await request(app)
+      .get('/api/v1/meetings?start=2026-10-26&end=2026-11-01')
+      .set('X-API-Key', userA.apiKey);
+    expect(weekRes.status).toBe(200);
+    const standups = weekRes.body.meetings.filter((m: any) => m.id === meetingId);
+    expect(standups.length).toBe(5);
+    expect(standups.map((m: any) => m.start_time.slice(0, 10))).toEqual([
+      '2026-10-26',
+      '2026-10-27',
+      '2026-10-28',
+      '2026-10-29',
+      '2026-10-30',
+    ]);
+
+    // 3. Query /agenda on Wednesday 2026-10-28 -> should include the expanded occurrence
+    const wedAgenda = await request(app)
+      .get('/api/v1/agenda?start=2026-10-28&end=2026-10-28')
+      .set('X-API-Key', userA.apiKey);
+    expect(wedAgenda.status).toBe(200);
+    expect(wedAgenda.body.meetings.some((m: any) => m.id === meetingId && m.start_time.startsWith('2026-10-28'))).toBe(true);
+
+    // 4. Update recurrence to custom_days (Mon, Wed, Fri -> [1, 3, 5])
+    const patchRes = await request(app)
+      .patch(`/api/v1/meetings/${meetingId}`)
+      .set('X-API-Key', userA.apiKey)
+      .send({
+        recurrence: 'custom_days',
+        repeat_days: [1, 3, 5],
+      });
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.recurrence).toBe('custom_days');
+    expect(patchRes.body.repeat_days).toEqual([1, 3, 5]);
+
+    const updatedWeekRes = await request(app)
+      .get('/api/v1/meetings?start=2026-10-26&end=2026-11-01')
+      .set('X-API-Key', userA.apiKey);
+    const customStandups = updatedWeekRes.body.meetings.filter((m: any) => m.id === meetingId);
+    expect(customStandups.map((m: any) => m.start_time.slice(0, 10))).toEqual([
+      '2026-10-26',
+      '2026-10-28',
+      '2026-10-30',
+    ]);
+  });
 });

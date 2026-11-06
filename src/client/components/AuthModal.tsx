@@ -198,8 +198,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onClose, canClo
 
         {/* Brand Header */}
         <div className="flex items-center gap-3 mb-5">
-          <div className="h-10 w-10 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shadow-2xs">
-            <HabitCorpIcon className="w-6 h-6" />
+          <div className="h-12 w-12 rounded-2xl bg-stone-50 border border-stone-200 flex items-center justify-center shadow-xs overflow-hidden shrink-0">
+            <HabitCorpIcon className="w-full h-full" />
           </div>
           <div>
             <h2 className="text-xl font-bold text-stone-900 tracking-tight">HabitCorp</h2>

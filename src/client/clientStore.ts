@@ -13,9 +13,11 @@ interface StoredData {
     email: string;
     password: string;
     apiKey: string;
+    last_rollover_date?: string | null;
   }>;
   projects: Project[];
   tasks: Task[];
+  subtasks?: any[];
   meetings: CalendarMeeting[];
   ghosts: Ghost[];
   calendars: CalendarSource[];
@@ -29,7 +31,7 @@ interface StoredData {
   }>;
 }
 
-const STORAGE_KEY = 'habitcorp_client_db_v1';
+const STORAGE_KEY = 'habitcorp_client_db_v4';
 
 function getDefaultSeedData(): StoredData {
   const today = new Date().toISOString().slice(0, 10);
@@ -59,23 +61,23 @@ function getDefaultSeedData(): StoredData {
       },
     ],
     projects: [
-      { id: 'proj_chinese', user_id: 'user_gabriel', name: '🇨🇳 Chinese Acquisition (HSK 4)', color: '#ec4899', icon: 'languages', created_at: now },
-      { id: 'proj_japanese', user_id: 'user_gabriel', name: '🇯🇵 Japanese Study (JLPT N5)', color: '#8b5cf6', icon: 'languages', created_at: now },
-      { id: 'proj_health', user_id: 'user_gabriel', name: '💪 Health & Fitness (SBS & Running)', color: '#10b981', icon: 'activity', created_at: now },
-      { id: 'proj_corp', user_id: 'user_gabriel', name: '💼 Enterprise Architecture & Governance', color: '#0ea5e9', icon: 'building', created_at: now },
-      { id: 'proj_unicorn', user_id: 'user_gabriel', name: '🦄 Unicorn Venture (P011/P012)', color: '#f59e0b', icon: 'sparkles', created_at: now },
-      { id: 'proj_family', user_id: 'user_gabriel', name: '👨‍👩‍👧‍👦 Family & Logistics', color: '#a855f7', icon: 'home', created_at: now },
+      { id: 'proj_chinese', user_id: 'user_test_default', name: '🇨🇳 Chinese Acquisition (HSK 4)', color: '#ec4899', icon: 'languages', created_at: now },
+      { id: 'proj_japanese', user_id: 'user_test_default', name: '🇯🇵 Japanese Study (JLPT N5)', color: '#8b5cf6', icon: 'languages', created_at: now },
+      { id: 'proj_health', user_id: 'user_test_default', name: '💪 Health & Fitness (SBS & Running)', color: '#10b981', icon: 'activity', created_at: now },
+      { id: 'proj_corp', user_id: 'user_test_default', name: '💼 Enterprise Architecture & Governance', color: '#0ea5e9', icon: 'building', created_at: now },
+      { id: 'proj_unicorn', user_id: 'user_test_default', name: '🦄 Unicorn Venture (P011/P012)', color: '#f59e0b', icon: 'sparkles', created_at: now },
+      { id: 'proj_family', user_id: 'user_test_default', name: '👨‍👩‍👧‍👦 Family & Logistics', color: '#a855f7', icon: 'home', created_at: now },
     ],
     ghosts: [
-      { id: 'ghost_alex', user_id: 'user_gabriel', name: 'Alex', relation: 'Partner / Spouse', color: '#ec4899', created_at: now },
-      { id: 'ghost_sam', user_id: 'user_gabriel', name: 'Sam', relation: 'Child (Piano/Language/Sports)', color: '#3b82f6', created_at: now },
-      { id: 'ghost_taylor', user_id: 'user_gabriel', name: 'Taylor', relation: 'Child (Drums/Karate/Music)', color: '#f97316', created_at: now },
-      { id: 'ghost_jordan', user_id: 'user_gabriel', name: 'Jordan', relation: 'Child (Acrobatics/Violin)', color: '#14b8a6', created_at: now },
+      { id: 'ghost_alex', user_id: 'user_test_default', name: 'Alex', relation: 'Partner / Spouse', color: '#ec4899', created_at: now },
+      { id: 'ghost_sam', user_id: 'user_test_default', name: 'Sam', relation: 'Child (Piano/Language/Sports)', color: '#3b82f6', created_at: now },
+      { id: 'ghost_taylor', user_id: 'user_test_default', name: 'Taylor', relation: 'Child (Drums/Karate/Music)', color: '#f97316', created_at: now },
+      { id: 'ghost_jordan', user_id: 'user_test_default', name: 'Jordan', relation: 'Child (Acrobatics/Violin)', color: '#14b8a6', created_at: now },
     ],
     tasks: [
       {
         id: 'habit_weigh_in',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_health',
         type: 'daily',
         time_of_day: 'morning',
@@ -106,7 +108,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'habit_chinese_anki',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_chinese',
         type: 'daily',
         time_of_day: 'morning',
@@ -137,7 +139,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'habit_work_kickoff',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_corp',
         type: 'daily',
         time_of_day: 'morning',
@@ -168,7 +170,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'habit_deep_work',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_corp',
         type: 'daily',
         time_of_day: 'workday',
@@ -199,7 +201,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'habit_japanese_study',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_japanese',
         type: 'daily',
         time_of_day: 'workday',
@@ -230,7 +232,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'habit_gym_sbs',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_health',
         type: 'daily',
         time_of_day: 'workday',
@@ -261,7 +263,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'habit_evening_close',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_family',
         type: 'daily',
         time_of_day: 'evening',
@@ -292,7 +294,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'task_cmc_review',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_corp',
         type: 'todo',
         title: 'Enterprise: Architecture Gate & Governance Alignment',
@@ -322,7 +324,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'task_unicorn_p011',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_unicorn',
         type: 'todo',
         title: 'Unicorn Venture: P011 Financial & Concept Validation',
@@ -352,7 +354,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'task_chinese_sentence_mining',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_chinese',
         type: 'todo',
         title: 'Chinese: Sentence Mining & HSK 4 Audio Deck',
@@ -382,7 +384,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'task_unicorn_p012',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         project_id: 'proj_unicorn',
         type: 'todo',
         title: 'Unicorn: P012 Technical Architecture RFC',
@@ -414,7 +416,7 @@ function getDefaultSeedData(): StoredData {
     meetings: [
       {
         id: 'meet_school_run_today',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         source_id: null,
         title: 'School Run (🚗 Kids)',
         description: 'Drop off children at school (08:30–13:30 schedule).',
@@ -433,7 +435,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'meet_dog_walk_today',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         source_id: null,
         title: 'Walk Dogs (🏡 Pets)',
         description: 'Morning walk with dogs around the neighborhood.',
@@ -452,7 +454,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'meet_corp_sync_today',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         source_id: null,
         title: 'Enterprise: Architecture Team Sync',
         description: 'Weekly team architecture review and cross-track delivery status.',
@@ -471,7 +473,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'ghost_alex_pickup_today',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         title: 'Alex: High School Campus Pickup (👩)',
         description: 'Teaching schedule finish.',
         location: 'High School',
@@ -487,7 +489,7 @@ function getDefaultSeedData(): StoredData {
       },
       {
         id: 'ghost_jordan_circus_today',
-        user_id: 'user_gabriel',
+        user_id: 'user_test_default',
         title: 'Jordan: Acrobatics Practice (👧)',
         description: '',
         location: 'Studio',
@@ -503,6 +505,7 @@ function getDefaultSeedData(): StoredData {
       },
     ],
     calendars: [],
+    subtasks: [],
     magicLinks: [],
   };
 }
@@ -520,6 +523,7 @@ export function getClientDb(): StoredData {
     if (!parsed.ghosts) parsed.ghosts = [];
     if (!parsed.meetings) parsed.meetings = [];
     if (!parsed.tasks) parsed.tasks = [];
+    if (!parsed.subtasks) parsed.subtasks = [];
     if (!parsed.projects) parsed.projects = [];
     if (!parsed.users) parsed.users = [];
     return parsed;
@@ -530,10 +534,138 @@ export function getClientDb(): StoredData {
 
 export function saveClientDb(data: StoredData) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
   } catch (e) {
     console.error('Failed to save to localStorage:', e);
   }
+}
+
+export function daysBetween(dateA: string, dateB: string): number {
+  const a = new Date(`${dateA}T00:00:00Z`).getTime();
+  const b = new Date(`${dateB}T00:00:00Z`).getTime();
+  return Math.round((b - a) / (1000 * 60 * 60 * 24));
+}
+
+export function isDailyDueOnDate(
+  task: {
+    frequency?: string;
+    repeat_interval?: number;
+    repeat_days?: string | number[];
+    created_at?: string;
+  },
+  dateStr: string
+): boolean {
+  const target = new Date(`${dateStr}T12:00:00Z`);
+  const dayOfWeek = target.getUTCDay(); // 0 (Sun) - 6 (Sat)
+
+  if (!task.frequency || task.frequency === 'daily') {
+    return true;
+  }
+
+  if (task.frequency === 'weekly') {
+    try {
+      const days: number[] = Array.isArray(task.repeat_days)
+        ? task.repeat_days
+        : JSON.parse((task.repeat_days as string) || '[0,1,2,3,4,5,6]');
+      return days.includes(dayOfWeek);
+    } catch {
+      return true;
+    }
+  }
+
+  if (task.frequency === 'every_n_days') {
+    const interval = Math.max(1, task.repeat_interval || 1);
+    const createdDate = (task.created_at || dateStr).slice(0, 10);
+    const diff = daysBetween(createdDate, dateStr);
+    return diff >= 0 && diff % interval === 0;
+  }
+
+  if (task.frequency === 'monthly') {
+    const createdDay = Number((task.created_at || dateStr).slice(8, 10)) || 1;
+    const targetDay = Number(dateStr.slice(8, 10));
+    return createdDay === targetDay;
+  }
+
+  return true;
+}
+
+export function runClientRollover(db: StoredData, userId?: string, customDate?: string): boolean {
+  const today = customDate || new Date().toISOString().slice(0, 10);
+  const targetUsers = userId ? db.users.filter((u) => u.id === userId) : db.users;
+  let anyChanged = false;
+
+  for (const user of targetUsers) {
+    const previousDate = user.last_rollover_date;
+    const isNewDay = user.last_rollover_date !== today;
+
+    // Check all tasks belonging to this user
+    for (const task of db.tasks) {
+      if (task.user_id !== user.id) continue;
+
+      if (task.type === 'daily' || task.type === 'habit') {
+        const completedToday = task.last_completed_date === today;
+
+        // Reset completion status if it wasn't completed today
+        if (task.completed && !completedToday) {
+          task.completed = 0;
+          anyChanged = true;
+          if (task.subtasks && task.subtasks.length > 0) {
+            task.subtasks.forEach((st) => (st.completed = 0));
+          }
+        }
+
+        // Streak maintenance for dailies (James Clear "Never miss twice" rule)
+        if (isNewDay && task.type === 'daily' && !completedToday && previousDate && previousDate < today) {
+          const diff = Math.min(30, daysBetween(previousDate, today));
+          let missedDaysCount = 0;
+          for (let i = 0; i < diff; i++) {
+            const d = new Date(`${previousDate}T12:00:00Z`);
+            d.setUTCDate(d.getUTCDate() + i);
+            const checkDate = d.toISOString().slice(0, 10);
+            if (isDailyDueOnDate(task, checkDate) && task.last_completed_date !== checkDate) {
+              missedDaysCount++;
+            }
+          }
+          if (missedDaysCount > 1 && (task.streak || 0) > 0) {
+            task.streak = 0;
+            anyChanged = true;
+          }
+        }
+      }
+
+      // Reset habit counters
+      if (task.type === 'habit') {
+        const lastReset = (task as any).last_habit_reset || previousDate || today;
+        let shouldResetHabit = false;
+        if (task.habit_reset_period === 'daily' && lastReset < today) {
+          shouldResetHabit = true;
+        } else if (task.habit_reset_period === 'weekly' && daysBetween(lastReset, today) >= 7) {
+          shouldResetHabit = true;
+        } else if (task.habit_reset_period === 'monthly' && lastReset.slice(0, 7) !== today.slice(0, 7)) {
+          shouldResetHabit = true;
+        }
+
+        if (shouldResetHabit) {
+          task.counter_up = 0;
+          task.counter_down = 0;
+          (task as any).last_habit_reset = today;
+          anyChanged = true;
+        }
+      }
+    }
+
+    if (user.last_rollover_date !== today) {
+      user.last_rollover_date = today;
+      anyChanged = true;
+    }
+  }
+
+  if (anyChanged) {
+    saveClientDb(db);
+  }
+  return anyChanged;
 }
 
 /**
@@ -551,6 +683,13 @@ export async function handleClientStorageRequest(
       body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
     } catch {}
   }
+
+  const apiKey = (options?.headers as any)?.['X-API-Key'] || (options?.headers as any)?.['x-api-key'];
+  const currentUser = (apiKey ? db.users.find((u) => u.apiKey === apiKey) : null) || db.users.find((u) => u.username === 'gabriel') || db.users[0];
+  const currentUserId = currentUser.id;
+
+  // Run rollover on every client request to ensure state is always synchronized with calendar day
+  runClientRollover(db, currentUserId);
 
   // 1. /api/v1/auth/default-user
   if (path === '/api/v1/auth/default-user') {
@@ -688,14 +827,14 @@ export async function handleClientStorageRequest(
   // 7. /api/v1/projects
   if (path.startsWith('/api/v1/projects')) {
     if (method === 'GET') {
-      return { projects: db.projects };
+      return { projects: (db.projects || []).filter((p) => p.user_id === currentUserId) };
     }
     if (method === 'POST') {
       const newProj: Project = {
         id: 'proj_' + Math.random().toString(36).slice(2, 9),
-        user_id: 'user_gabriel',
+        user_id: currentUserId,
         name: body.name || 'New Project',
-        color: body.color || '#6366f1',
+        color: body.color || '#3f477a',
         icon: body.icon || 'folder',
         created_at: new Date().toISOString(),
         total_tasks: 0,
@@ -705,25 +844,94 @@ export async function handleClientStorageRequest(
       saveClientDb(db);
       return newProj;
     }
+    const cleanPath = path.split('?')[0].replace(/\/+$/, '');
+    const projMatch = cleanPath.match(/\/api\/v1\/projects\/([^/]+)/);
+    if (projMatch && method === 'PATCH') {
+      const projId = projMatch[1];
+      const proj = db.projects.find((p) => p.id === projId);
+      if (!proj) {
+        throw new Error('Project not found.');
+      }
+      if (body.name !== undefined) proj.name = body.name.trim();
+      if (body.color !== undefined) proj.color = body.color;
+      if (body.icon !== undefined) proj.icon = body.icon;
+      // Also update cached project_name / project_color on tasks
+      db.tasks.forEach((t) => {
+        if (t.project_id === projId) {
+          if (body.name !== undefined) t.project_name = proj.name;
+          if (body.color !== undefined) t.project_color = proj.color;
+        }
+      });
+      saveClientDb(db);
+      return proj;
+    }
+    if (projMatch && method === 'DELETE') {
+      const projId = projMatch[1];
+      db.projects = db.projects.filter((p) => p.id !== projId);
+      db.tasks.forEach((t) => {
+        if (t.project_id === projId) {
+          t.project_id = null;
+          delete (t as any).project_name;
+          delete (t as any).project_color;
+        }
+      });
+      saveClientDb(db);
+      return { message: 'Project deleted.' };
+    }
   }
+
+  // Helper to enrich a task with project name & color and compute is_due_today
+  const enrichTask = (t: Task): Task => {
+    const proj = t.project_id ? db.projects.find((p) => p.id === t.project_id) : null;
+    const today = new Date().toISOString().slice(0, 10);
+    let is_due_today = false;
+    if (t.type === 'daily' || t.type === 'habit') {
+      is_due_today = isDailyDueOnDate(t, today);
+    } else if (t.due_date) {
+      is_due_today = t.due_date.slice(0, 10) <= today && !t.completed;
+    }
+    return {
+      ...t,
+      project_name: proj ? proj.name : (t.project_name || null),
+      project_color: proj ? proj.color : (t.project_color || null),
+      is_due_today,
+    };
+  };
 
   // 8. /api/v1/tasks
   if (path.startsWith('/api/v1/tasks')) {
+    // Run rollover before any task queries/mutations to guarantee fresh daily state
+    runClientRollover(db, currentUserId);
+
     // Score task
     const scoreMatch = path.match(/\/api\/v1\/tasks\/([^/]+)\/score/);
     if (scoreMatch && method === 'POST') {
       const taskId = scoreMatch[1];
+      const today = new Date().toISOString().slice(0, 10);
+      const now = new Date().toISOString();
       const task = db.tasks.find((t) => t.id === taskId);
       if (task) {
-        if (task.type === 'habit') {
+        if (task.type === 'habit' && (body.direction === 'up' || body.direction === 'down')) {
           if (body.direction === 'up') task.counter_up = (task.counter_up || 0) + 1;
           if (body.direction === 'down') task.counter_down = (task.counter_down || 0) + 1;
+        } else if (task.type === 'daily' || task.type === 'habit') {
+          task.completed = task.completed ? 0 : 1;
+          if (task.completed) {
+            task.streak = (task.streak || 0) + 1;
+            task.best_streak = Math.max(task.best_streak || 0, task.streak);
+            task.last_completed_date = today;
+            task.completed_at = now;
+          } else {
+            task.streak = Math.max(0, (task.streak || 1) - 1);
+            task.last_completed_date = null;
+            task.completed_at = null;
+          }
         } else {
           task.completed = task.completed ? 0 : 1;
-          if (task.completed) task.streak = (task.streak || 0) + 1;
+          task.completed_at = task.completed ? now : null;
         }
         saveClientDb(db);
-        return task;
+        return enrichTask(task);
       }
     }
 
@@ -735,15 +943,24 @@ export async function handleClientStorageRequest(
       if (task) {
         Object.assign(task, body, { updated_at: new Date().toISOString() });
         saveClientDb(db);
-        return task;
+        return enrichTask(task);
       }
+    }
+
+    // Delete task
+    if (idMatch && method === 'DELETE') {
+      const taskId = idMatch[1];
+      db.tasks = db.tasks.filter((t) => t.id !== taskId);
+      db.subtasks = db.subtasks.filter((s) => s.task_id !== taskId);
+      saveClientDb(db);
+      return { message: 'Task deleted successfully.' };
     }
 
     // Create task
     if (path === '/api/v1/tasks' && method === 'POST') {
       const newTask: Task = {
         id: 'task_' + Math.random().toString(36).slice(2, 9),
-        user_id: 'user_gabriel',
+        user_id: currentUserId,
         project_id: body.project_id || null,
         type: body.type || 'todo',
         title: body.title || 'Untitled',
@@ -769,24 +986,36 @@ export async function handleClientStorageRequest(
         scheduled_date: body.scheduled_date || null,
         scheduled_start: body.scheduled_start || null,
         scheduled_duration: body.scheduled_duration || 30,
+        subtasks: Array.isArray(body.subtasks)
+          ? body.subtasks.map((s: any, idx: number) => ({
+              id: typeof s === 'object' && s?.id ? s.id : `sub_${Date.now()}_${idx}`,
+              task_id: '',
+              title: typeof s === 'string' ? s : s?.title || '',
+              completed: 0,
+              position: idx,
+            }))
+          : [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
       db.tasks.push(newTask);
       saveClientDb(db);
-      return newTask;
+      return enrichTask(newTask);
     }
 
     // List tasks
     if (path === '/api/v1/tasks' && method === 'GET') {
-      return { tasks: db.tasks };
+      const userTasks = (db.tasks || [])
+        .filter((t) => t.user_id === currentUserId)
+        .map(enrichTask);
+      return { tasks: userTasks };
     }
   }
 
   // 9. /api/v1/meetings
   if (path.startsWith('/api/v1/meetings')) {
     if (method === 'GET') {
-      return { meetings: db.meetings };
+      return { meetings: (db.meetings || []).filter((m) => m.user_id === currentUserId) };
     }
     if (method === 'POST') {
       const rawGhostIds: string[] = Array.isArray(body.ghost_ids)
@@ -803,7 +1032,7 @@ export async function handleClientStorageRequest(
 
       const newMeet: CalendarMeeting = {
         id: 'meet_' + Math.random().toString(36).slice(2, 9),
-        user_id: 'user_gabriel',
+        user_id: currentUserId,
         source_id: null,
         title: body.title || 'Meeting',
         description: body.description || '',
@@ -879,12 +1108,17 @@ export async function handleClientStorageRequest(
       return { success: true, count: 0 };
     }
     if (method === 'GET') {
-      return { ghosts: db.ghosts };
+      const userGhosts = (db.ghosts || []).filter((g) => g.user_id === currentUserId);
+      const ghostsWithCount = userGhosts.map((g) => ({
+        ...g,
+        events_count: (db.meetings || []).filter((m) => (m as any).ghost_id === g.id || m.ghost_ids?.includes(g.id)).length,
+      }));
+      return { ghosts: ghostsWithCount };
     }
     if (method === 'POST') {
       const newGhost: Ghost = {
         id: 'ghost_' + Math.random().toString(36).slice(2, 9),
-        user_id: 'user_gabriel',
+        user_id: currentUserId,
         name: body.name || 'Ghost Contact',
         relation: body.relation || '',
         color: body.color || '#ec4899',
@@ -948,12 +1182,17 @@ export async function handleClientStorageRequest(
       return { success: true, count: 0 };
     }
     if (method === 'GET') {
-      return { calendars: db.calendars || [] };
+      const userCals = (db.calendars || []).filter((c) => c.user_id === currentUserId);
+      const calsWithCount = userCals.map((c) => ({
+        ...c,
+        events_count: (db.meetings || []).filter((m) => m.source_id === c.id).length,
+      }));
+      return { calendars: calsWithCount };
     }
     if (method === 'POST') {
       const newCal: CalendarSource = {
         id: 'cal_' + Math.random().toString(36).slice(2, 9),
-        user_id: 'user_gabriel',
+        user_id: currentUserId,
         name: body.name || 'Calendar Feed',
         color: body.color || '#6366f1',
         ics_url: body.ics_url || '',

@@ -10,10 +10,13 @@ export interface ParsedCalendarEvent {
   start_time: string;
   end_time: string;
   all_day: boolean;
+  recurrence?: string;
+  repeat_days?: number[];
+  repeat_until?: string | null;
 }
 
 function unfoldIcsLines(raw: string): string[] {
-  const unfolded = raw.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+  const unfolded = raw.replace(/\r?\n[ \t]/g, '');
   return unfolded.split(/\r?\n/);
 }
 
@@ -27,7 +30,7 @@ function unescapeIcsText(val: string): string {
 }
 
 function parseIcsDate(rawVal: string, keyParams: string): { iso: string; allDay: boolean } {
-  const clean = rawVal.trim();
+  const clean = rawVal.trim().replace(/^"|"$/g, '');
   const isDateOnly = keyParams.includes('VALUE=DATE') || /^\d{8}$/.test(clean);
 
   if (isDateOnly && clean.length >= 8) {
@@ -68,84 +71,200 @@ function extractMeetingUrl(text: string): string {
   return match ? match[0] : '';
 }
 
+/**
+ * Extracts Cadence recurrence rule from RFC 5545 RRULE string
+ */
+function parseRRule(rruleStr: string, dtStartIso: string): {
+  recurrence: string;
+  repeatDays: number[];
+  repeatUntil: string | null;
+  interval: number;
+} | null {
+  if (!rruleStr) return null;
+  const parts = rruleStr.split(';');
+  const params: Record<string, string> = {};
+  for (const p of parts) {
+    const [k, v] = p.split('=');
+    if (k && v) params[k.toUpperCase()] = v.toUpperCase();
+  }
+
+  const freq = params['FREQ'];
+  if (!freq) return null;
+
+  const interval = params['INTERVAL'] ? Number(params['INTERVAL']) || 1 : 1;
+  let recurrence = 'none';
+  let repeatDays: number[] = [];
+  let repeatUntil: string | null = null;
+
+  if (params['UNTIL']) {
+    const rawUntil = params['UNTIL'];
+    if (rawUntil.length >= 8) {
+      repeatUntil = `${rawUntil.slice(0, 4)}-${rawUntil.slice(4, 6)}-${rawUntil.slice(6, 8)}`;
+    }
+  }
+
+  const DAY_MAP: Record<string, number> = {
+    SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6,
+  };
+
+  if (freq === 'DAILY') {
+    recurrence = 'daily';
+    repeatDays = [0, 1, 2, 3, 4, 5, 6];
+  } else if (freq === 'WEEKLY') {
+    if (params['BYDAY']) {
+      const days = params['BYDAY'].split(',').map((d) => {
+        const dayCode = d.replace(/[^A-Z]/g, '').slice(-2);
+        return DAY_MAP[dayCode];
+      }).filter((n) => n !== undefined);
+
+      repeatDays = Array.from(new Set(days)).sort();
+      if (repeatDays.length === 5 && [1, 2, 3, 4, 5].every((d) => repeatDays.includes(d))) {
+        recurrence = 'weekdays';
+      } else if (repeatDays.length === 1) {
+        recurrence = 'weekly';
+      } else {
+        recurrence = 'custom_days';
+      }
+    } else {
+      recurrence = 'weekly';
+      const d = new Date(dtStartIso).getUTCDay();
+      repeatDays = [Number.isNaN(d) ? 1 : d];
+    }
+  } else if (freq === 'MONTHLY') {
+    recurrence = 'monthly';
+  }
+
+  if (recurrence !== 'none') {
+    return { recurrence, repeatDays, repeatUntil, interval };
+  }
+  return null;
+}
+
 export function parseIcsContent(icsText: string): ParsedCalendarEvent[] {
   const lines = unfoldIcsLines(icsText);
   const events: ParsedCalendarEvent[] = [];
 
   let inEvent = false;
+  let inSubComponent = false;
   let current: Record<string, { value: string; params: string }> = {};
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed === 'BEGIN:VEVENT') {
-      inEvent = true;
-      current = {};
-      continue;
-    }
-    if (trimmed === 'END:VEVENT') {
-      inEvent = false;
-      const dtStart = current['DTSTART'];
-      if (dtStart) {
-        const startParsed = parseIcsDate(dtStart.value, dtStart.params);
-        let endIso = startParsed.iso;
-        if (current['DTEND']) {
-          endIso = parseIcsDate(current['DTEND'].value, current['DTEND'].params).iso;
-        } else {
-          const endD = new Date(startParsed.iso);
-          endD.setMinutes(endD.getMinutes() + (startParsed.allDay ? 1440 : 60));
-          endIso = endD.toISOString();
-        }
 
-        const title = unescapeIcsText(current['SUMMARY']?.value || 'Busy / Meeting');
-        const description = unescapeIcsText(current['DESCRIPTION']?.value || '');
-        const location = unescapeIcsText(current['LOCATION']?.value || '');
-        const urlField = unescapeIcsText(current['URL']?.value || '');
-        const meetingUrl =
-          urlField || extractMeetingUrl(location) || extractMeetingUrl(description);
-        const uid =
-          unescapeIcsText(current['UID']?.value || '') ||
-          crypto.createHash('sha1').update(`${title}:${startParsed.iso}`).digest('hex');
-
-        events.push({
-          uid,
-          title,
-          description,
-          location,
-          meeting_url: meetingUrl,
-          start_time: startParsed.iso,
-          end_time: endIso,
-          all_day: startParsed.allDay,
-        });
-
-        const rrule = current['RRULE']?.value || '';
-        if (rrule && (rrule.includes('FREQ=DAILY') || rrule.includes('FREQ=WEEKLY'))) {
-          const isDaily = rrule.includes('FREQ=DAILY');
-          const stepDays = isDaily ? 1 : 7;
-          const maxOccurrences = isDaily ? 14 : 6;
-          const durationMs =
-            new Date(endIso).getTime() - new Date(startParsed.iso).getTime();
-
-          for (let i = 1; i <= maxOccurrences; i++) {
-            const nextStart = new Date(startParsed.iso);
-            nextStart.setUTCDate(nextStart.getUTCDate() + i * stepDays);
-            const nextEnd = new Date(nextStart.getTime() + durationMs);
-            events.push({
-              uid: `${uid}_r_${i}`,
-              title,
-              description,
-              location,
-              meeting_url: meetingUrl,
-              start_time: nextStart.toISOString(),
-              end_time: nextEnd.toISOString(),
-              all_day: startParsed.allDay,
-            });
-          }
-        }
+    if (trimmed.startsWith('BEGIN:')) {
+      const comp = trimmed.slice(6);
+      if (comp === 'VEVENT') {
+        inEvent = true;
+        inSubComponent = false;
+        current = {};
+      } else if (inEvent) {
+        // e.g. BEGIN:VALARM or BEGIN:VTODO
+        inSubComponent = true;
       }
       continue;
     }
 
-    if (inEvent) {
+    if (trimmed.startsWith('END:')) {
+      const comp = trimmed.slice(4);
+      if (comp === 'VEVENT') {
+        inEvent = false;
+        inSubComponent = false;
+
+        const dtStart = current['DTSTART'];
+        if (dtStart) {
+          const startParsed = parseIcsDate(dtStart.value, dtStart.params);
+          let endIso = startParsed.iso;
+          if (current['DTEND']) {
+            endIso = parseIcsDate(current['DTEND'].value, current['DTEND'].params).iso;
+          } else {
+            const endD = new Date(startParsed.iso);
+            endD.setMinutes(endD.getMinutes() + (startParsed.allDay ? 1440 : 60));
+            endIso = endD.toISOString();
+          }
+
+          const title = unescapeIcsText(current['SUMMARY']?.value || 'Busy / Meeting');
+          const description = unescapeIcsText(current['DESCRIPTION']?.value || '');
+          const location = unescapeIcsText(current['LOCATION']?.value || '');
+          const urlField = unescapeIcsText(current['URL']?.value || '');
+          const meetingUrl =
+            urlField || extractMeetingUrl(location) || extractMeetingUrl(description);
+          const uid =
+            unescapeIcsText(current['UID']?.value || '') ||
+            crypto.createHash('sha1').update(`${title}:${startParsed.iso}`).digest('hex');
+
+          const rruleRaw = current['RRULE']?.value || '';
+          const parsedRule = parseRRule(rruleRaw, startParsed.iso);
+
+          if (parsedRule && parsedRule.interval === 1) {
+            // Native Cadence recurring event: dynamically expanded across any date range!
+            events.push({
+              uid,
+              title,
+              description,
+              location,
+              meeting_url: meetingUrl,
+              start_time: startParsed.iso,
+              end_time: endIso,
+              all_day: startParsed.allDay,
+              recurrence: parsedRule.recurrence,
+              repeat_days: parsedRule.repeatDays,
+              repeat_until: parsedRule.repeatUntil,
+            });
+          } else if (parsedRule && parsedRule.interval > 1) {
+            // For custom interval recurrences (e.g. biweekly), expand instances around current active window
+            const now = Date.now();
+            const windowStart = now - 30 * 24 * 60 * 60 * 1000;
+            const windowEnd = now + 90 * 24 * 60 * 60 * 1000;
+            const durationMs = new Date(endIso).getTime() - new Date(startParsed.iso).getTime();
+            const stepDays = parsedRule.recurrence === 'daily' ? parsedRule.interval : parsedRule.interval * 7;
+            const stepMs = stepDays * 24 * 60 * 60 * 1000;
+
+            let curTime = new Date(startParsed.iso).getTime();
+            // Fast forward if started far in the past
+            if (curTime < windowStart) {
+              const jumps = Math.floor((windowStart - curTime) / stepMs);
+              curTime += jumps * stepMs;
+            }
+
+            let idx = 0;
+            while (curTime <= windowEnd && idx < 52) {
+              if (curTime >= windowStart) {
+                events.push({
+                  uid: `${uid}_inst_${idx}`,
+                  title,
+                  description,
+                  location,
+                  meeting_url: meetingUrl,
+                  start_time: new Date(curTime).toISOString(),
+                  end_time: new Date(curTime + durationMs).toISOString(),
+                  all_day: startParsed.allDay,
+                });
+              }
+              curTime += stepMs;
+              idx++;
+            }
+          } else {
+            // Non-recurring single event
+            events.push({
+              uid,
+              title,
+              description,
+              location,
+              meeting_url: meetingUrl,
+              start_time: startParsed.iso,
+              end_time: endIso,
+              all_day: startParsed.allDay,
+            });
+          }
+        }
+        continue;
+      } else if (inEvent) {
+        inSubComponent = false;
+        continue;
+      }
+    }
+
+    if (inEvent && !inSubComponent) {
       const colonIdx = line.indexOf(':');
       if (colonIdx === -1) continue;
       const fullKey = line.slice(0, colonIdx);
@@ -186,13 +305,15 @@ export function importEventsIntoDb(
   const isGhost = ghostInfo ? 1 : 0;
   const ghostId = ghostInfo ? ghostInfo.ghostId : null;
   const ghostName = ghostInfo ? ghostInfo.ghostName : '';
+  const ghostIds = ghostInfo ? JSON.stringify([ghostInfo.ghostId]) : '[]';
 
   const insertStmt = db.prepare(`
     INSERT INTO calendar_events (
-      id, user_id, source_id, ghost_id, is_ghost, ghost_name,
+      id, user_id, source_id, ghost_id, ghost_ids, is_ghost, ghost_name,
       external_uid, title, description, location,
-      meeting_url, start_time, end_time, all_day, color, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      meeting_url, start_time, end_time, all_day, color,
+      recurrence, repeat_days, repeat_until, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const ev of events) {
@@ -201,6 +322,7 @@ export function importEventsIntoDb(
       userId,
       sourceId,
       ghostId,
+      ghostIds,
       isGhost,
       ghostName,
       ev.uid,
@@ -212,6 +334,9 @@ export function importEventsIntoDb(
       ev.end_time,
       ev.all_day ? 1 : 0,
       color,
+      ev.recurrence || 'none',
+      JSON.stringify(ev.repeat_days || []),
+      ev.repeat_until || null,
       now
     );
   }

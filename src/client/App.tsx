@@ -39,6 +39,17 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  BatteryLow,
+  Monitor,
+  Target,
+  Inbox,
+  HelpCircle,
+  Minimize2,
+  Maximize2,
+  Volume2,
+  VolumeX,
+  FastForward,
+  RotateCcw,
 } from 'lucide-react';
 import { TaskModal } from './components/TaskModal';
 import { AgendaView } from './components/AgendaView';
@@ -46,12 +57,26 @@ import { CalendarModal } from './components/CalendarModal';
 import { MeetingModal } from './components/MeetingModal';
 import { AgentApiModal } from './components/AgentApiModal';
 import { AuthModal } from './components/AuthModal';
+import { Sidebar } from './components/Sidebar';
+import { SettingsModal } from './components/SettingsModal';
 import { HabitCorpIcon } from './components/HabitCorpIcon';
 import { FocusPacingBar } from './components/FocusPacingBar';
 import { PomodoroTimer } from './components/PomodoroTimer';
 import { fetchJson } from './apiHelper';
 import { useTranslation } from './i18n/I18nContext';
 import { LanguagePicker } from './components/LanguagePicker';
+import { StreakGrowthBadge } from './components/StreakGrowthBadge';
+import { SpotlightModal } from './components/SpotlightModal';
+import { BrainDumpDrawer } from './components/BrainDumpDrawer';
+import { TutorialModal } from './components/TutorialModal';
+import { GoblinBrainModal } from './components/GoblinBrainModal';
+import { CelebrationOverlay } from './components/CelebrationOverlay';
+import { playPeacefulChime } from './utils/celebration';
+import { isTaskInGracePeriod, getStreakGraceMessage } from './utils/streak';
+import { findNextAvailableSlot, getSpoonCalibratedDuration } from './utils/smartScheduling';
+import { getNextFlowTask } from './utils/flowPrompt';
+import { isTaskStale, getStaleTasks, getStaleTriageMessage } from './utils/backlogTriage';
+import { DailyShutdownModal } from './components/DailyShutdownModal';
 
 export const App: React.FC = () => {
   const { t, formatDate } = useTranslation();
@@ -78,12 +103,122 @@ export const App: React.FC = () => {
   const [habitTab, setHabitTab] = useState<'all' | 'due_today'>('all');
   const [habitTimeFilter, setHabitTimeFilter] = useState<'all' | 'morning' | 'workday' | 'evening' | 'anytime'>('all');
   const [taskTab, setTaskTab] = useState<'all' | 'todo' | 'without_timeline'>('all');
+  const [mobileHabitsTasksTab, setMobileHabitsTasksTab] = useState<'habits' | 'tasks'>('habits');
+  const [mobileTasksAgendaTab, setMobileTasksAgendaTab] = useState<'tasks' | 'agenda'>('tasks');
 
   // Filters
   const [selectedProjectId, setSelectedProjectId] = useState<string | 'all'>('all');
+  const [activeFilter, setActiveFilter] = useState<'active' | 'all'>('active');
   const projectsScrollRef = useRef<HTMLDivElement>(null);
-  const [difficultyFilter] = useState<DifficultyTier | 'all'>('all');
+  const [difficultyFilter, setDifficultyFilter] = useState<DifficultyTier | 'all'>('all');
+  const [lowBatteryFilter, setLowBatteryFilter] = useState<boolean>(false);
+  const [energyMode, setEnergyMode] = useState<'high' | 'steady' | 'gentle'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('habitcorp_energy_mode') as any;
+        if (stored === 'high' || stored === 'steady' || stored === 'gentle') return stored;
+      } catch {}
+    }
+    return 'steady';
+  });
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Restful Theme & Mindfulness State
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('habitcorp_theme');
+      if (stored === 'light' || stored === 'dark' || stored === 'system') return stored;
+    }
+    return 'system';
+  });
+  const [mindfulReflection, setMindfulReflection] = useState<string | null>(null);
+  const reflectionTimeoutRef = useRef<any>(null);
+
+  // Visual Density Mode: 'spacious' (full details) vs 'compact' (zen minimalism)
+  const [densityMode, setDensityMode] = useState<'spacious' | 'compact'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('habitcorp_density');
+      if (stored === 'compact' || stored === 'spacious') return stored;
+    }
+    return 'spacious';
+  });
+
+  const toggleDensityMode = () => {
+    setDensityMode((prev) => {
+      const next = prev === 'spacious' ? 'compact' : 'spacious';
+      try {
+        localStorage.setItem('habitcorp_density', next);
+      } catch {}
+      return next;
+    });
+  };
+
+  // Audio Feedback & Dopamine Celebration State
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('habitcorp_sound');
+      if (stored !== null) return stored === 'true';
+    }
+    return true;
+  });
+  const [celebrationKey, setCelebrationKey] = useState<number>(0);
+
+  const triggerCelebration = () => {
+    setCelebrationKey((prev) => prev + 1);
+    playPeacefulChime(soundEnabled);
+  };
+
+  // Settings Modal & Tutorial Visibility State
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [showTutorials, setShowTutorials] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('habitcorp_show_tutorials') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const showTutorialsRef = useRef(showTutorials);
+  useEffect(() => {
+    showTutorialsRef.current = showTutorials;
+  }, [showTutorials]);
+
+  const handleToggleTutorials = (val: boolean) => {
+    setShowTutorials(val);
+    try {
+      localStorage.setItem('habitcorp_show_tutorials', String(val));
+    } catch {}
+  };
+
+  // Zen Mode State & Persistence (Requirement R4)
+  const [zenMode, setZenMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('habitcorp_zen_mode') === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
+
+  const zenModeRef = useRef(zenMode);
+  useEffect(() => {
+    zenModeRef.current = zenMode;
+  }, [zenMode]);
+
+  const toggleZenMode = () => {
+    setZenMode((prev) => {
+      const next = !prev;
+      zenModeRef.current = next;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('habitcorp_zen_mode', String(next));
+        } catch {}
+      }
+      return next;
+    });
+  };
 
   // Modals
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -92,6 +227,16 @@ export const App: React.FC = () => {
   const [modalScheduledDate, setModalScheduledDate] = useState<string | undefined>();
   const [modalScheduledStart, setModalScheduledStart] = useState<string | undefined>();
   const [modalDueDate, setModalDueDate] = useState<string | undefined>();
+
+  const [spotlightOpen, setSpotlightOpen] = useState(false);
+  const [spotlightTaskId, setSpotlightTaskId] = useState<string | undefined>();
+  const [nextFlowPrompt, setNextFlowPrompt] = useState<{ completedTitle: string; nextTask: Task } | null>(null);
+  const flowPromptTimeoutRef = useRef<any>(null);
+  const [brainDumpOpen, setBrainDumpOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [goblinModalOpen, setGoblinModalOpen] = useState(false);
+  const [goblinTask, setGoblinTask] = useState<Task | null>(null);
+  const [dailyShutdownOpen, setDailyShutdownOpen] = useState(false);
 
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
   const [meetingModalOpen, setMeetingModalOpen] = useState(false);
@@ -112,7 +257,7 @@ export const App: React.FC = () => {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [isDragOverTasks, setIsDragOverTasks] = useState(false);
 
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [todayStr, setTodayStr] = useState(() => new Date().toISOString().slice(0, 10));
 
   const handleAuthSuccess = (newAuth: AuthState) => {
     setAuth(newAuth);
@@ -177,6 +322,128 @@ export const App: React.FC = () => {
         console.debug('Default user fetch unavailable:', e);
         setAuthModalOpen(true);
       });
+  }, []);
+
+  // Sync Theme preference to <html> element
+  useEffect(() => {
+    const root = document.documentElement;
+    const isDark =
+      theme === 'dark' ||
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (isDark) {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('habitcorp_theme', theme);
+    } catch {}
+  }, [theme]);
+
+  const cycleTheme = () => {
+    setTheme((prev) => {
+      if (prev === 'light') return 'dark';
+      if (prev === 'dark') return 'system';
+      return 'light';
+    });
+  };
+
+  const handleSetEnergyMode = (mode: 'high' | 'steady' | 'gentle') => {
+    setEnergyMode(mode);
+    try {
+      localStorage.setItem('habitcorp_energy_mode', mode);
+    } catch {}
+
+    if (mode === 'gentle') {
+      setLowBatteryFilter(true);
+      setDensityMode('compact');
+      setMindfulReflection('✨ Gentle Mode active. Low visual noise, XS/S tasks prioritized. Go easy on yourself today.');
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
+    } else if (mode === 'high') {
+      setLowBatteryFilter(false);
+      setDensityMode('spacious');
+      setMindfulReflection('🚀 High Energy Mode! Ready for deep work and tackling challenging goals.');
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 5000);
+    } else {
+      setLowBatteryFilter(false);
+      setMindfulReflection('🌱 Steady Mode active. One step at a time at your natural pace.');
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 5000);
+    }
+  };
+
+  // Global ADHD & Accessibility Hotkeys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        setTaskModalOpen(false);
+        setMeetingModalOpen(false);
+        setCalendarModalOpen(false);
+        setProjectModalOpen(false);
+        setAgentModalOpen(false);
+        setSpotlightOpen(false);
+        setBrainDumpOpen(false);
+        setTutorialOpen(false);
+        setGoblinModalOpen(false);
+        setDailyShutdownOpen(false);
+        setSettingsModalOpen(false);
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setBrainDumpOpen(true);
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        setEditingTask(null);
+        setDefaultTaskType('todo');
+        setTaskModalOpen(true);
+      } else if (e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        setSpotlightOpen(true);
+      } else if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        setBrainDumpOpen(true);
+      } else if (e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        setDailyShutdownOpen(true);
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        cycleTheme();
+      } else if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        setShowPomodoro((prev) => !prev);
+      } else if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        toggleZenMode();
+      } else if (e.key === '?') {
+        if (showTutorialsRef.current) {
+          e.preventDefault();
+          setTutorialOpen(true);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const fetchGhosts = async () => {
@@ -252,6 +519,41 @@ export const App: React.FC = () => {
       fetchMeetings();
     }
   }, [selectedDate]);
+
+  // Auto-refresh tasks and synchronized date when midnight passes or when window regains visibility/focus
+  useEffect(() => {
+    const checkRollover = () => {
+      const nowDay = new Date().toISOString().slice(0, 10);
+      if (nowDay !== todayStr) {
+        setTodayStr(nowDay);
+        if (auth) {
+          fetchTasks();
+          fetchMeetings();
+        }
+      }
+    };
+
+    // Check periodically every 30 seconds
+    const timer = setInterval(checkRollover, 30000);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        checkRollover();
+        if (auth) {
+          fetchTasks();
+        }
+      }
+    };
+
+    window.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [todayStr, auth]);
 
   // Project creation handler
   const handleCreateProject = async (name: string, color: string): Promise<string | undefined> => {
@@ -380,8 +682,43 @@ export const App: React.FC = () => {
   };
 
   // Scoring / Task actions
-  const handleScoreTask = async (taskId: string, direction: 'up' | 'down' = 'up') => {
+  const handleScoreTask = async (taskId: string, direction: 'up' | 'down' | 'toggle' = 'up') => {
     if (!auth) return;
+
+    if (direction === 'down') {
+      const mindfulQuotes = [
+        "A slip is just data, not a character flaw. Reset gently for your next cue.",
+        "Take a slow breath. Notice what triggered this moment without judgment.",
+        "Every moment is a fresh reset. One lapse does not undo your progress.",
+        "Curiosity over criticism: What was your environment asking of you?",
+      ];
+      const randomQuote = mindfulQuotes[Math.floor(Math.random() * mindfulQuotes.length)];
+      setMindfulReflection(randomQuote);
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => {
+        setMindfulReflection(null);
+      }, 7000);
+    }
+
+    if (direction === 'up' || direction === 'toggle') {
+      const target = tasks.find((t) => t.id === taskId);
+      if (!target || !target.completed) {
+        triggerCelebration();
+
+        // ADHD Flow Bridge: Find the optimal next task to recommend
+        if (target) {
+          const nextTask = getNextFlowTask(target, tasks);
+          if (nextTask) {
+            setNextFlowPrompt({ completedTitle: target.title, nextTask });
+            if (flowPromptTimeoutRef.current) clearTimeout(flowPromptTimeoutRef.current);
+            flowPromptTimeoutRef.current = setTimeout(() => {
+              setNextFlowPrompt(null);
+            }, 8000);
+          }
+        }
+      }
+    }
+
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id !== taskId) return t;
@@ -411,6 +748,206 @@ export const App: React.FC = () => {
         body: JSON.stringify({ direction }),
       });
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Goblin Brain: Demolish task into micro executable steps
+  const handleApplyGoblinSubtasks = async (taskId: string, steps: string[]) => {
+    if (!auth) return;
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const newSubtasks = steps.map((title) => ({
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sub_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      completed: 0,
+    }));
+    const combinedSubtasks = [...(task.subtasks || []), ...newSubtasks];
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, subtasks: combinedSubtasks } : t))
+    );
+    try {
+      await fetchJson(`/api/v1/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': auth.apiKey,
+        },
+        body: JSON.stringify({ subtasks: combinedSubtasks }),
+      });
+      await fetchTasks();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Goblin Brain: Create new task with micro executable steps
+  const handleCreateTaskWithSubtasks = async (title: string, steps: string[]) => {
+    if (!auth || !title.trim()) return;
+    const newSubtasks = steps.map((s) => ({
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sub_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: s,
+      completed: 0,
+    }));
+    try {
+      await fetchJson('/api/v1/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': auth.apiKey,
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          type: 'todo',
+          difficulty: 'trivial', // Lowest cognitive barrier
+          subtasks: newSubtasks,
+        }),
+      });
+      await fetchTasks();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Brain Dump: Batch save stream-of-consciousness lines as trivial tasks
+  const handleSaveBrainDump = async (titles: string[]) => {
+    if (!auth || titles.length === 0) return;
+    try {
+      const tasksToCreate = titles.map((title) => ({
+        title,
+        type: 'todo',
+        difficulty: 'trivial', // Lowest cognitive barrier
+      }));
+      await fetchJson('/api/v1/tasks/batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': auth.apiKey,
+        },
+        body: JSON.stringify({ tasks: tasksToCreate }),
+      });
+      await fetchTasks();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Compassionate Shift: 1-Tap defer task to tomorrow without shame
+  const handlePushTaskToTomorrow = async (taskId: string) => {
+    if (!auth) return;
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? {
+              ...t,
+              due_date: tomorrow,
+              scheduled_date: null,
+              scheduled_start: null,
+            }
+          : t
+      )
+    );
+    try {
+      await fetchJson(`/api/v1/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': auth.apiKey,
+        },
+        body: JSON.stringify({
+          due_date: tomorrow,
+          scheduled_date: null,
+          scheduled_start: null,
+        }),
+      });
+      await fetchTasks();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Compassionate Sweep: 1-Tap sweep all unfinished today tasks to tomorrow
+  const handleSweepIncompleteToTomorrow = async () => {
+    if (!auth) return;
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const incompleteTodayTasks = tasks.filter(
+      (t) => !t.completed && (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr)
+    );
+    if (incompleteTodayTasks.length === 0) return;
+
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (!t.completed && (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr)) {
+          return { ...t, due_date: tomorrow, scheduled_date: null, scheduled_start: null };
+        }
+        return t;
+      })
+    );
+
+    try {
+      await Promise.all(
+        incompleteTodayTasks.map((t) =>
+          fetchJson(`/api/v1/tasks/${t.id}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': auth.apiKey,
+            },
+            body: JSON.stringify({
+              due_date: tomorrow,
+              scheduled_date: null,
+              scheduled_start: null,
+            }),
+          })
+        )
+      );
+      await fetchTasks();
+      setMindfulReflection("All unfinished tasks gently shifted to tomorrow. Rest well tonight!");
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 6000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Compassionate Stale Backlog Triage: Rest tasks older than 7 days into Someday (+30d)
+  const handleTriageStaleTasks = async () => {
+    if (!auth) return;
+    const stale = getStaleTasks(tasks);
+    if (stale.length === 0) return;
+
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 30);
+    const somedayStr = futureDate.toISOString().slice(0, 10);
+
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (stale.some((s) => s.id === t.id)) {
+          return { ...t, scheduled_date: somedayStr };
+        }
+        return t;
+      })
+    );
+
+    try {
+      await Promise.all(
+        stale.map((st) =>
+          fetchJson(`/api/v1/tasks/${st.id}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': auth.apiKey,
+            },
+            body: JSON.stringify({ scheduled_date: somedayStr }),
+          })
+        )
+      );
+      await fetchTasks();
+      setMindfulReflection(getStaleTriageMessage(stale.length));
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
     } catch (e) {
       console.error(e);
     }
@@ -482,20 +1019,20 @@ export const App: React.FC = () => {
     }
   };
 
-  // Fast: 1-click schedule today's task to agenda
+  // Fast: 1-click schedule today's task to agenda with conflict-free slot & calibrated duration
   const handleQuickScheduleTodayToAgenda = (taskId: string) => {
-    // Find next reasonable hour or default 09:00
-    const nowHour = new Date().getHours();
-    const nextHour = Math.min(21, Math.max(9, nowHour + 1));
-    const timeStr = `${String(nextHour).padStart(2, '0')}:00`;
-    handleScheduleTask(taskId, todayStr, timeStr, 30);
+    const task = tasks.find((t) => t.id === taskId);
+    const duration = getSpoonCalibratedDuration(task?.difficulty);
+    const targetSlot = findNextAvailableSlot(tasks, meetings, todayStr, duration);
+    handleScheduleTask(taskId, todayStr, targetSlot, duration);
   };
 
-  // Fast: 1-click schedule habit to agenda based on time_of_day
+  // Fast: 1-click schedule habit to agenda based on time_of_day with calibrated duration
   const handleQuickScheduleHabitToAgenda = (habitId: string) => {
     const habit = tasks.find((t) => t.id === habitId);
     if (!habit) return;
 
+    const duration = habit.scheduled_duration || getSpoonCalibratedDuration(habit.difficulty);
     const tod = habit.time_of_day || 'anytime';
     let targetTime = '09:00';
 
@@ -506,12 +1043,9 @@ export const App: React.FC = () => {
     } else if (tod === 'evening') {
       targetTime = '17:30';
     } else {
-      const nowHour = new Date().getHours();
-      const nextHour = Math.min(21, Math.max(9, nowHour + 1));
-      targetTime = `${String(nextHour).padStart(2, '0')}:00`;
+      targetTime = findNextAvailableSlot(tasks, meetings, selectedDate || todayStr, duration);
     }
 
-    const duration = habit.scheduled_duration || 30;
     handleScheduleTask(habitId, selectedDate || todayStr, targetTime, duration);
   };
 
@@ -665,11 +1199,16 @@ export const App: React.FC = () => {
     }
   };
 
-  // Filtered Tasks (by Difficulty, Search, and Project)
+  // Filtered Tasks (by Difficulty, Low-Battery Spoons, Active/All Status, Search, and Project)
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (selectedProjectId !== 'all' && t.project_id !== selectedProjectId) return false;
       if (difficultyFilter !== 'all' && t.difficulty !== difficultyFilter) return false;
+      if (lowBatteryFilter) {
+        // Spoon Theory: only trivial (1 spoon) and easy (2 spoons)
+        if (t.difficulty !== 'trivial' && t.difficulty !== 'easy') return false;
+      }
+      if ((zenMode || activeFilter === 'active') && Boolean(t.completed)) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesTitle = t.title.toLowerCase().includes(q);
@@ -679,16 +1218,42 @@ export const App: React.FC = () => {
       }
       return true;
     });
-  }, [tasks, selectedProjectId, difficultyFilter, searchQuery]);
+  }, [tasks, selectedProjectId, difficultyFilter, lowBatteryFilter, activeFilter, searchQuery, zenMode]);
+
+  // Spoon Theory Daily Battery Meter (Alex & Dr. Marcus)
+  const spoonStats = useMemo(() => {
+    let pendingSpoons = 0;
+    let completedSpoons = 0;
+
+    for (const t of tasks) {
+      const isToday =
+        t.due_date?.slice(0, 10) === todayStr ||
+        t.scheduled_date?.slice(0, 10) === todayStr ||
+        t.is_due_today;
+      if (!isToday) continue;
+
+      const spoons = t.difficulty === 'trivial' ? 1 : t.difficulty === 'easy' ? 2 : t.difficulty === 'medium' ? 3 : 4;
+      if (t.completed) {
+        completedSpoons += spoons;
+      } else {
+        pendingSpoons += spoons;
+      }
+    }
+
+    const totalTarget = 12; // Recommended healthy baseline for sustainable executive function
+    const isOverloaded = pendingSpoons > totalTarget;
+    return { pendingSpoons, completedSpoons, totalTarget, isOverloaded };
+  }, [tasks, todayStr]);
 
   // 1. HABITS (contains habits marked as daily or with other periodicity)
   const baseHabitsList = useMemo(() => {
     return filteredTasks.filter((t) => {
+      if (zenMode && Boolean(t.completed)) return false;
       if (t.type !== 'habit' && t.type !== 'daily') return false;
       if (habitTab === 'due_today') return t.is_due_today;
       return true;
     });
-  }, [filteredTasks, habitTab]);
+  }, [filteredTasks, habitTab, zenMode]);
 
   // Count habits per time-of-day for filter pills
   const habitCounts = useMemo(() => {
@@ -739,8 +1304,11 @@ export const App: React.FC = () => {
 
   // 2. TASKS (all, to do, without timeline)
   const allTasksList = useMemo(() => {
-    return filteredTasks.filter((t) => t.type === 'todo');
-  }, [filteredTasks]);
+    return filteredTasks.filter((t) => {
+      if (zenMode && Boolean(t.completed)) return false;
+      return t.type === 'todo';
+    });
+  }, [filteredTasks, zenMode]);
 
   const tasksList = useMemo(() => {
     if (taskTab === 'todo') {
@@ -760,193 +1328,137 @@ export const App: React.FC = () => {
     () => allTasksList.filter((t) => !t.due_date && !t.scheduled_date && !t.start_date).length,
     [allTasksList]
   );
+  const staleTasksList = useMemo(() => getStaleTasks(tasks), [tasks]);
+
+  const todayCompletedTasks = useMemo(() => {
+    return tasks.filter((t) => Boolean(t.completed) && (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr || t.is_due_today));
+  }, [tasks, todayStr]);
+
+  const todayPendingTasks = useMemo(() => {
+    return tasks.filter((t) => !t.completed && (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr || t.is_due_today));
+  }, [tasks, todayStr]);
 
   return (
-    <div className="min-h-screen bg-[#fafaf9] text-stone-800 flex flex-col font-sans">
-      {/* Top Navbar in Pastel Light Theme */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-stone-200/80 px-4 py-2.5">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          {/* Brand */}
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-200/90 flex items-center justify-center shadow-2xs">
-              <HabitCorpIcon className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-stone-900 tracking-tight">{t.brandName}</h1>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 font-medium hidden sm:inline">
-                  {t.tagline}
-                </span>
+    <div className="min-h-screen bg-[#fafaf9] text-stone-800 flex flex-row font-sans pb-16 md:pb-0">
+      {/* Desktop Navigation Sidebar */}
+      <Sidebar
+        onOpenGoblin={() => {
+          setGoblinTask(null);
+          setGoblinModalOpen(true);
+        }}
+        onOpenAgentApi={() => setAgentModalOpen(true)}
+        onOpenPomodoro={() => setShowPomodoro((v) => !v)}
+        onOpenCalendars={() => setCalendarModalOpen(true)}
+        onOpenSpotlight={() => setSpotlightOpen(true)}
+        onOpenBrainDump={() => setBrainDumpOpen(true)}
+        onOpenShutdown={() => setDailyShutdownOpen(true)}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => {
+          setSoundEnabled((prev) => {
+            const next = !prev;
+            try {
+              localStorage.setItem('habitcorp_sound', String(next));
+            } catch {}
+            return next;
+          });
+        }}
+        showTutorials={showTutorials}
+        onOpenTutorial={() => setTutorialOpen(true)}
+        onOpenSettings={() => setSettingsModalOpen(true)}
+        theme={theme}
+        onCycleTheme={cycleTheme}
+        auth={auth}
+        onOpenAuth={() => setAuthModalOpen(true)}
+        onLogout={handleLogout}
+        zenMode={zenMode}
+        onToggleZenMode={toggleZenMode}
+      />
+
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Navbar in Pastel Light Theme */}
+        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-stone-200/80 px-4 py-2.5">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            {/* Brand */}
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-200/90 flex items-center justify-center shadow-2xs">
+                <HabitCorpIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-base font-bold text-stone-900 tracking-tight">{t.brandName}</h1>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 font-medium hidden sm:inline">
+                    {t.tagline}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Three View Modes: Habits + Tasks | Tasks + Agenda (DEFAULT) | Agenda */}
-          <div className="flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200/80 text-xs">
-            <button
-              onClick={() => setViewMode('habits_tasks')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition ${
-                viewMode === 'habits_tasks'
-                  ? 'bg-white text-stone-900 shadow-2xs font-semibold'
-                  : 'text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              <Columns className="w-3.5 h-3.5" />
-              <span>{t.viewHabitsTasks}</span>
-            </button>
-            <button
-              onClick={() => setViewMode('tasks_agenda')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition ${
-                viewMode === 'tasks_agenda'
-                  ? 'bg-white text-stone-900 shadow-2xs font-semibold'
-                  : 'text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              <LayoutGrid className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="font-semibold text-indigo-950">{t.viewTasksAgenda}</span>
-            </button>
-            <button
-              onClick={() => setViewMode('agenda')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition ${
-                viewMode === 'agenda'
-                  ? 'bg-white text-stone-900 shadow-2xs font-semibold'
-                  : 'text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>{t.viewAgendaGrid}</span>
-            </button>
-          </div>
-
-          {/* Right Action Icons */}
-          <div className="flex items-center gap-2">
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-stone-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t.searchPlaceholder}
-                className="bg-stone-50 hover:bg-stone-100 focus:bg-white border border-stone-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-400 w-32 sm:w-48 shadow-2xs transition"
-              />
-            </div>
-
-            <button
-              onClick={() => {
-                setEditingTask(null);
-                setDefaultTaskType('todo');
-                setModalDueDate(undefined);
-                setTaskModalOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{t.addBtn}</span>
-            </button>
-
-            <button
-              onClick={() => setShowPomodoro((v) => !v)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition border ${
-                showPomodoro
-                  ? 'bg-rose-50 border-rose-200 text-rose-800 font-semibold'
-                  : 'bg-stone-100 hover:bg-stone-200 text-stone-700 border-stone-200'
-              }`}
-              title={t.pomodoroBtn}
-            >
-              <span>🍅</span>
-              <span className="hidden sm:inline">{t.pomodoroBtn}</span>
-            </button>
-
-            <button
-              onClick={() => setCalendarModalOpen(true)}
-              className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl text-xs transition border border-stone-200"
-              title={t.calendarsGhostsBtn}
-            >
-              <CalendarDays className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => setAgentModalOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-indigo-700 rounded-xl text-xs font-medium transition border border-stone-200"
-              title={t.agentApiBtn}
-            >
-              <Bot className="w-4 h-4 text-indigo-600" />
-              <span className="hidden sm:inline">{t.agentApiBtn}</span>
-            </button>
-
-            {/* Language Switcher */}
-            <LanguagePicker />
-
-            {auth ? (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="flex items-center gap-1.5 text-xs bg-stone-100 hover:bg-stone-200 px-2.5 py-1 rounded-xl border border-stone-200 transition"
-                  title="Account menu"
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-stone-700 font-mono text-[11px] font-semibold">@{auth.username}</span>
-                  <ChevronDown className="w-3 h-3 text-stone-400" />
-                </button>
-
-                {/* User Dropdown Menu */}
-                {userMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white border border-stone-200 rounded-2xl p-2 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 text-xs">
-                    <div className="px-3 py-2 border-b border-stone-100 mb-1">
-                      <p className="font-bold text-stone-900 truncate">@{auth.username}</p>
-                      {auth.email && <p className="text-[11px] text-stone-400 truncate">{auth.email}</p>}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        setAuthModalOpen(true);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-stone-700 hover:bg-stone-100 flex items-center gap-2 transition"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-rose-500" />
-                      <span>{t.switchAccount}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        setAgentModalOpen(true);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-stone-700 hover:bg-stone-100 flex items-center gap-2 transition"
-                    >
-                      <Bot className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>{t.agentApiBtn}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="w-full text-left px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition mt-1 border-t border-stone-100"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>{t.logOut}</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
+            {/* Three View Modes: Habits + Tasks | Tasks + Agenda (DEFAULT) | Agenda */}
+            <div className="flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200/80 text-xs">
               <button
-                type="button"
-                onClick={() => setAuthModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-2xs transition"
+                onClick={() => setViewMode('habits_tasks')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition ${
+                  viewMode === 'habits_tasks'
+                    ? 'bg-white text-stone-900 shadow-2xs font-semibold'
+                    : 'text-stone-500 hover:text-stone-800'
+                }`}
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{t.logInSignUp}</span>
+                <Columns className="w-3.5 h-3.5" />
+                <span>{t.viewHabitsTasks}</span>
               </button>
-            )}
+              <button
+                onClick={() => setViewMode('tasks_agenda')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition ${
+                  viewMode === 'tasks_agenda'
+                    ? 'bg-white text-stone-900 shadow-2xs font-semibold'
+                    : 'text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5 text-indigo-600" />
+                <span className="font-semibold text-indigo-950">{t.viewTasksAgenda}</span>
+              </button>
+              <button
+                onClick={() => setViewMode('agenda')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition ${
+                  viewMode === 'agenda'
+                    ? 'bg-white text-stone-900 shadow-2xs font-semibold'
+                    : 'text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{t.viewAgendaGrid}</span>
+              </button>
+            </div>
+
+            {/* Right Action Icons: Search & Add ONLY */}
+            <div className="flex items-center gap-2">
+              {/* Search Input */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-stone-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t.searchPlaceholder}
+                  className="bg-stone-50 hover:bg-stone-100 focus:bg-white border border-stone-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-400 w-32 sm:w-48 shadow-2xs transition"
+                />
+              </div>
+
+              <button
+                onClick={() => {
+                  setEditingTask(null);
+                  setDefaultTaskType('todo');
+                  setModalDueDate(undefined);
+                  setTaskModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t.addBtn}</span>
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
       {/* Pomodoro Timer (Milestone 3 & Pomodoro Suite) */}
       {showPomodoro && (
@@ -960,8 +1472,42 @@ export const App: React.FC = () => {
       )}
 
       {/* Project Filter Strip (Positioned directly above the active view / after pomodoro) */}
-      <section className="bg-white/80 border-b border-stone-200/70 px-4 py-1.5">
-        <div className="max-w-7xl mx-auto flex items-center gap-1.5">
+      <section className="bg-white/80 dark:bg-stone-900/80 border-b border-stone-200/70 dark:border-stone-800 px-4 py-1.5">
+        <div className="max-w-7xl mx-auto flex items-center gap-2">
+          {/* Status Filter: Actiu / Tot Segmented Control */}
+          <div
+            className="flex items-center bg-stone-100 dark:bg-stone-800 p-0.5 rounded-lg border border-stone-200 dark:border-stone-700 text-xs shrink-0 select-none"
+            role="group"
+            aria-label="Filter active or all items"
+          >
+            <button
+              type="button"
+              onClick={() => setActiveFilter('active')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                activeFilter === 'active'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 font-bold shadow-2xs'
+                  : 'text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200'
+              }`}
+              aria-pressed={activeFilter === 'active'}
+            >
+              {t.filterActive || 'Actiu'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveFilter('all')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                activeFilter === 'all'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 font-bold shadow-2xs'
+                  : 'text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200'
+              }`}
+              aria-pressed={activeFilter === 'all'}
+            >
+              {t.filterAll || 'Tot'}
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-stone-200 dark:bg-stone-700 shrink-0 mx-0.5" />
+
           <div className="flex items-center gap-1 font-semibold text-stone-400 uppercase tracking-wider text-[10px] shrink-0 mr-1 select-none">
             <Folder className="w-3.5 h-3.5 text-stone-400" />
             <span>{t.projectsLabel}</span>
@@ -985,16 +1531,90 @@ export const App: React.FC = () => {
             }}
             className="flex-1 flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar scroll-smooth py-1"
           >
+            {/* Spoon Theory Low-Battery Filter */}
             <button
-              onClick={() => setSelectedProjectId('all')}
-              className={`px-2.5 py-1 rounded-lg font-medium border text-xs transition shrink-0 ${
-                selectedProjectId === 'all'
-                  ? 'bg-stone-800 text-white border-stone-800 font-semibold shadow-2xs'
-                  : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+              type="button"
+              onClick={() => setLowBatteryFilter((prev) => !prev)}
+              className={`px-2.5 py-1 rounded-lg font-medium border text-xs transition shrink-0 flex items-center gap-1.5 ${
+                lowBatteryFilter
+                  ? 'bg-amber-100 dark:bg-amber-950/80 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-semibold shadow-2xs'
+                  : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-50/50'
               }`}
+              title="Low Battery Mode: Show only low-activation tasks (XS: 5–15m & S: 15–30m)"
+              aria-pressed={lowBatteryFilter}
             >
-              {t.allProjects} ({tasks.length})
+              <BatteryLow className={`w-3.5 h-3.5 ${lowBatteryFilter ? 'text-amber-600 dark:text-amber-400' : 'text-stone-400'}`} />
+              <span>Low Battery</span>
+              {lowBatteryFilter && (
+                <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-950 dark:text-amber-100 px-1 rounded-full font-bold">
+                  ON
+                </span>
+              )}
             </button>
+
+            {/* Daily Spoon Battery Gauge */}
+            <div
+              onClick={() => setLowBatteryFilter((prev) => !prev)}
+              className={`px-2.5 py-1 rounded-lg border text-xs cursor-pointer transition select-none flex items-center gap-1.5 shrink-0 ${
+                spoonStats.isOverloaded
+                  ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                  : spoonStats.pendingSpoons > 8
+                  ? 'bg-amber-50 dark:bg-amber-950/70 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
+                  : 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              }`}
+              title={`Today's Spoon Budget: ${spoonStats.pendingSpoons} spoons pending, ${spoonStats.completedSpoons} completed. (Max recommended: ${spoonStats.totalTarget} spoons). Click to toggle Low Battery filter.`}
+            >
+              <span>{spoonStats.isOverloaded ? '⚡' : '🔋'}</span>
+              <span className="font-semibold font-mono">{spoonStats.pendingSpoons}/{spoonStats.totalTarget} Spoons</span>
+              {spoonStats.isOverloaded && (
+                <span className="text-[9px] font-bold uppercase tracking-wider bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-100 px-1 rounded-xs">
+                  Heavy
+                </span>
+              )}
+            </div>
+
+            {/* Contextual Energy Mode Selector (Elena, Alex, Dr. Marcus) */}
+            <div className="flex items-center gap-1 p-0.5 bg-stone-100 dark:bg-stone-800 rounded-lg border border-stone-200 dark:border-stone-700 text-xs shrink-0 select-none">
+              <button
+                type="button"
+                onClick={() => handleSetEnergyMode('gentle')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
+                  energyMode === 'gentle'
+                    ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 font-bold shadow-2xs'
+                    : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+                }`}
+                title="Gentle mode: low spoons / overwhelm (XS/S tasks & compact zen)"
+              >
+                <span>🔋</span>
+                <span className="hidden sm:inline">Gentle</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetEnergyMode('steady')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
+                  energyMode === 'steady'
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 font-bold shadow-2xs'
+                    : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+                }`}
+                title="Steady mode: normal pace and balanced load"
+              >
+                <span>🌱</span>
+                <span className="hidden sm:inline">Steady</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetEnergyMode('high')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
+                  energyMode === 'high'
+                    ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-200 font-bold shadow-2xs'
+                    : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+                }`}
+                title="High energy: ready for deep focus and big challenges"
+              >
+                <span>⚡</span>
+                <span className="hidden sm:inline">High</span>
+              </button>
+            </div>
 
             {projects.map((p) => {
               const count = tasks.filter((t) => t.project_id === p.id).length;
@@ -1051,46 +1671,140 @@ export const App: React.FC = () => {
 
       {/* Main Content Area based on ViewMode */}
 
-      {/* VIEW 1: HABITS + TASKS (2 balanced columns) */}
+      {/* VIEW 1: HABITS + TASKS (Mobile Segmented Tab or Desktop 2-Col) */}
       {viewMode === 'habits_tasks' && (
-        <main className="flex-1 max-w-6xl w-full mx-auto p-4 grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-          {renderHabitsColumn()}
-          {renderTasksColumn()}
+        <main className="flex-1 max-w-6xl w-full mx-auto p-4">
+          {/* Mobile Segmented Control */}
+          <div className="md:hidden flex items-center justify-center p-1 bg-stone-100 dark:bg-stone-800 rounded-xl mb-4 border border-stone-200 dark:border-stone-700">
+            <button
+              type="button"
+              onClick={() => setMobileHabitsTasksTab('habits')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+                mobileHabitsTasksTab === 'habits'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                  : 'text-stone-500 dark:text-stone-400'
+              }`}
+            >
+              <span>🔁 Habits ({habitsList.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileHabitsTasksTab('tasks')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+                mobileHabitsTasksTab === 'tasks'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                  : 'text-stone-500 dark:text-stone-400'
+              }`}
+            >
+              <span>📋 Tasks ({tasksList.length})</span>
+            </button>
+          </div>
+
+          <div className="hidden md:grid md:grid-cols-2 gap-5 items-start">
+            {renderHabitsColumn()}
+            {renderTasksColumn()}
+          </div>
+
+          <div className="md:hidden">
+            {mobileHabitsTasksTab === 'habits' ? renderHabitsColumn() : renderTasksColumn()}
+          </div>
         </main>
       )}
 
       {/* VIEW 2: TASKS + AGENDA (DEFAULT: Tasks column on left, Agenda on right) */}
       {viewMode === 'tasks_agenda' && (
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-[410px_1fr] gap-5 items-start">
-          {renderTasksColumn()}
-          <div className="w-full">
-            <AgendaView
-              tasks={tasks}
-              meetings={meetings}
-              ghosts={ghosts}
-              selectedDate={selectedDate}
-              selectedProjectId={selectedProjectId}
-              projects={projects}
-              onSelectDate={setSelectedDate}
-              onScoreTask={handleScoreTask}
-              onEditTask={(task) => {
-                setEditingTask(task);
-                setTaskModalOpen(true);
-              }}
-              onScheduleTask={handleScheduleTask}
-              onOpenNewTaskModal={(date, start) => {
-                setEditingTask(null);
-                setDefaultTaskType('todo');
-                setModalScheduledDate(date);
-                setModalScheduledStart(start);
-                setTaskModalOpen(true);
-              }}
-              onOpenNewMeetingModal={handleOpenNewMeeting}
-              onEditMeeting={handleEditMeeting}
-              onDeleteMeeting={handleDeleteMeeting}
-              onRescheduleMeeting={handleRescheduleMeeting}
-              onUnscheduleTask={handleUnscheduleTask}
-            />
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4">
+          {/* Mobile Segmented Control */}
+          <div className="lg:hidden flex items-center justify-center p-1 bg-stone-100 dark:bg-stone-800 rounded-xl mb-4 border border-stone-200 dark:border-stone-700">
+            <button
+              type="button"
+              onClick={() => setMobileTasksAgendaTab('tasks')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+                mobileTasksAgendaTab === 'tasks'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                  : 'text-stone-500 dark:text-stone-400'
+              }`}
+            >
+              <span>📋 Tasks ({tasksList.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileTasksAgendaTab('agenda')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+                mobileTasksAgendaTab === 'agenda'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                  : 'text-stone-500 dark:text-stone-400'
+              }`}
+            >
+              <span>📅 Agenda</span>
+            </button>
+          </div>
+
+          <div className="hidden lg:grid lg:grid-cols-[410px_1fr] gap-5 items-start">
+            {renderTasksColumn()}
+            <div className="w-full">
+              <AgendaView
+                tasks={tasks}
+                meetings={meetings}
+                ghosts={ghosts}
+                selectedDate={selectedDate}
+                selectedProjectId={selectedProjectId}
+                projects={projects}
+                onSelectDate={setSelectedDate}
+                onScoreTask={handleScoreTask}
+                onEditTask={(task) => {
+                  setEditingTask(task);
+                  setTaskModalOpen(true);
+                }}
+                onScheduleTask={handleScheduleTask}
+                onOpenNewTaskModal={(date, start) => {
+                  setEditingTask(null);
+                  setDefaultTaskType('todo');
+                  setModalScheduledDate(date);
+                  setModalScheduledStart(start);
+                  setTaskModalOpen(true);
+                }}
+                onOpenNewMeetingModal={handleOpenNewMeeting}
+                onEditMeeting={handleEditMeeting}
+                onDeleteMeeting={handleDeleteMeeting}
+                onRescheduleMeeting={handleRescheduleMeeting}
+                onUnscheduleTask={handleUnscheduleTask}
+              />
+            </div>
+          </div>
+
+          <div className="lg:hidden">
+            {mobileTasksAgendaTab === 'tasks' ? (
+              renderTasksColumn()
+            ) : (
+              <AgendaView
+                tasks={tasks}
+                meetings={meetings}
+                ghosts={ghosts}
+                selectedDate={selectedDate}
+                selectedProjectId={selectedProjectId}
+                projects={projects}
+                onSelectDate={setSelectedDate}
+                onScoreTask={handleScoreTask}
+                onEditTask={(task) => {
+                  setEditingTask(task);
+                  setTaskModalOpen(true);
+                }}
+                onScheduleTask={handleScheduleTask}
+                onOpenNewTaskModal={(date, start) => {
+                  setEditingTask(null);
+                  setDefaultTaskType('todo');
+                  setModalScheduledDate(date);
+                  setModalScheduledStart(start);
+                  setTaskModalOpen(true);
+                }}
+                onOpenNewMeetingModal={handleOpenNewMeeting}
+                onEditMeeting={handleEditMeeting}
+                onDeleteMeeting={handleDeleteMeeting}
+                onRescheduleMeeting={handleRescheduleMeeting}
+                onUnscheduleTask={handleUnscheduleTask}
+              />
+            )}
           </div>
         </main>
       )}
@@ -1127,6 +1841,7 @@ export const App: React.FC = () => {
           />
         </main>
       )}
+      </div>
 
       {/* Modals */}
       <TaskModal
@@ -1274,6 +1989,205 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Dopamine Celebration Visual Feedback */}
+      <CelebrationOverlay triggerKey={celebrationKey} />
+
+      {/* Mindful Pause Harm-Reduction Toast */}
+      {mindfulReflection && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-50 max-w-md w-11/12 bg-amber-50 dark:bg-stone-900 border border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-200 px-4 py-3 rounded-2xl shadow-xl flex items-center justify-between gap-3 text-xs animate-in fade-in slide-in-from-top-3 duration-200"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg shrink-0 select-none">🧘</span>
+            <span className="font-medium leading-relaxed">{mindfulReflection}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMindfulReflection(null)}
+            className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 p-1 shrink-0 rounded-lg hover:bg-amber-100 dark:hover:bg-stone-800 transition"
+            title="Dismiss reflection"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Next Step Flow Prompt (ADHD Transition Bridge) */}
+      {nextFlowPrompt && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92vw] md:w-auto bg-stone-900/95 dark:bg-stone-800/95 backdrop-blur-md text-white border border-stone-700/60 shadow-2xl rounded-2xl px-4 py-3 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-emerald-400 text-lg select-none">✨</span>
+            <div className="min-w-0">
+              <p className="text-[11px] text-stone-300">
+                Done: <span className="text-stone-400 line-through truncate inline-block max-w-[120px] align-bottom">{nextFlowPrompt.completedTitle}</span>
+              </p>
+              <p className="text-xs font-semibold text-white truncate max-w-[180px] sm:max-w-[240px]">
+                Up next: <span className="text-amber-300">{nextFlowPrompt.nextTask.title}</span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setSpotlightTaskId(nextFlowPrompt.nextTask.id);
+                setSpotlightOpen(true);
+                setNextFlowPrompt(null);
+              }}
+              className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1 active:scale-95 cursor-pointer"
+            >
+              <span>Focus</span>
+              <span>🎯</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setNextFlowPrompt(null)}
+              className="text-stone-400 hover:text-stone-200 p-1 rounded-lg transition cursor-pointer"
+              aria-label="Dismiss flow prompt"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ADHD & Executive Function Modals */}
+      <GoblinBrainModal
+        isOpen={goblinModalOpen}
+        onClose={() => {
+          setGoblinModalOpen(false);
+          setGoblinTask(null);
+        }}
+        task={goblinTask}
+        tasks={tasks}
+        onApplySubtasks={handleApplyGoblinSubtasks}
+        onCreateTaskWithSubtasks={handleCreateTaskWithSubtasks}
+      />
+
+      <SpotlightModal
+        isOpen={spotlightOpen}
+        initialTaskId={spotlightTaskId}
+        onClose={() => {
+          setSpotlightOpen(false);
+          setSpotlightTaskId(undefined);
+        }}
+        tasks={filteredTasks}
+        onCompleteTask={(id) => handleScoreTask(id, 'toggle')}
+        onOpenGoblinBrain={(task: Task) => {
+          setGoblinTask(task);
+          setGoblinModalOpen(true);
+        }}
+        onToggleSubtask={handleToggleSubtask}
+      />
+
+      <BrainDumpDrawer
+        isOpen={brainDumpOpen}
+        onClose={() => setBrainDumpOpen(false)}
+        onSaveTasks={handleSaveBrainDump}
+      />
+
+      <TutorialModal
+        isOpen={tutorialOpen}
+        onClose={() => setTutorialOpen(false)}
+      />
+
+      <DailyShutdownModal
+        isOpen={dailyShutdownOpen}
+        onClose={() => setDailyShutdownOpen(false)}
+        completedTasks={todayCompletedTasks}
+        pendingTodayTasks={todayPendingTasks}
+        onSweepToTomorrow={handleSweepIncompleteToTomorrow}
+      />
+
+      <SettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        showTutorials={showTutorials}
+        onToggleTutorials={handleToggleTutorials}
+        theme={theme}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => {
+          setSoundEnabled((prev) => {
+            const next = !prev;
+            try {
+              localStorage.setItem('habitcorp_sound', String(next));
+            } catch {}
+            return next;
+          });
+        }}
+        densityMode={densityMode}
+        onToggleDensity={toggleDensityMode}
+        onSelectTheme={(t) => setTheme(t)}
+      />
+
+      {/* Mobile Ergonomic Bottom Navigation Bar (< md screens) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md border-t border-stone-200/90 dark:border-stone-800 z-40 px-3 flex items-center justify-around shadow-lg select-none">
+        <button
+          type="button"
+          onClick={() => setViewMode('tasks_agenda')}
+          className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2.5 rounded-xl transition cursor-pointer ${
+            viewMode === 'tasks_agenda' || viewMode === 'habits_tasks'
+              ? 'text-indigo-600 dark:text-indigo-400 font-bold'
+              : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+          }`}
+          title="Board View"
+        >
+          <LayoutGrid className="w-5 h-5" />
+          <span className="text-[10px]">Board</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setViewMode('agenda')}
+          className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2.5 rounded-xl transition cursor-pointer ${
+            viewMode === 'agenda'
+              ? 'text-indigo-600 dark:text-indigo-400 font-bold'
+              : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+          }`}
+          title="Agenda Grid"
+        >
+          <Calendar className="w-5 h-5" />
+          <span className="text-[10px]">Agenda</span>
+        </button>
+
+        {/* Center Primary Action: Quick Add Task */}
+        <button
+          type="button"
+          onClick={() => {
+            setEditingTask(null);
+            setDefaultTaskType('todo');
+            setTaskModalOpen(true);
+          }}
+          className="w-11 h-11 -mt-4 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white shadow-md flex items-center justify-center text-xl active:scale-95 transition cursor-pointer"
+          title="Add Task / Habit"
+          aria-label="Add Task / Habit"
+        >
+          <Plus className="w-6 h-6 stroke-[2.5]" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSpotlightOpen(true)}
+          className="flex flex-col items-center justify-center gap-0.5 py-1 px-2.5 rounded-xl text-stone-500 dark:text-stone-400 hover:text-rose-600 transition cursor-pointer"
+          title="Spotlight Single-Task Focus"
+        >
+          <Target className="w-5 h-5 text-rose-500" />
+          <span className="text-[10px]">Focus</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setBrainDumpOpen(true)}
+          className="flex flex-col items-center justify-center gap-0.5 py-1 px-2.5 rounded-xl text-stone-500 dark:text-stone-400 hover:text-purple-600 transition cursor-pointer"
+          title="Brain Dump Quick Capture"
+        >
+          <Inbox className="w-5 h-5 text-purple-500" />
+          <span className="text-[10px]">Dump</span>
+        </button>
+      </nav>
     </div>
   );
 
@@ -1282,8 +2196,90 @@ export const App: React.FC = () => {
     // Helper to render an individual draggable habit card
     const renderHabitCard = (habit: Task) => {
       const isDone = Boolean(habit.completed);
+      if (zenMode && isDone) return null;
       const tod = (habit.time_of_day || 'anytime') as 'morning' | 'workday' | 'evening' | 'anytime';
       const isScheduled = Boolean(habit.scheduled_start);
+      const inGrace = isTaskInGracePeriod(habit, todayStr);
+
+      if (densityMode === 'compact') {
+        return (
+          <div
+            key={habit.id}
+            draggable={true}
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', habit.id);
+              setDraggedTaskId(habit.id);
+            }}
+            onDragEnd={() => setDraggedTaskId(null)}
+            onClick={() => {
+              setEditingTask(habit);
+              setTaskModalOpen(true);
+            }}
+            className={`px-3 py-2 rounded-xl border transition shadow-2xs flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+              isDone
+                ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-60'
+                : 'bg-white dark:bg-stone-800 border-stone-200/90 dark:border-stone-700/80 hover:border-indigo-300'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              {habit.type === 'daily' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleScoreTask(habit.id, 'up');
+                  }}
+                  className="text-stone-400 hover:text-emerald-600 shrink-0"
+                  title={isDone ? 'Mark incomplete' : 'Mark done for today'}
+                >
+                  {isDone ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : (
+                    <Circle className="w-4 h-4" />
+                  )}
+                </button>
+              )}
+              <span className={`text-xs font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>
+                {habit.title}
+              </span>
+              {habit.streak > 0 && habit.type === 'daily' && (
+                <span className="text-[10px] text-amber-600 font-mono flex items-center gap-0.5 shrink-0">
+                  <Flame className="w-3 h-3 text-amber-500" />
+                  {habit.streak}d
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+              {(Boolean(habit.habit_positive) || Boolean(habit.habit_negative)) && (
+                <div className="flex items-center gap-1">
+                  {Boolean(habit.habit_positive) && (
+                    <button
+                      type="button"
+                      onClick={() => handleScoreTask(habit.id, 'up')}
+                      className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded text-[10px] font-bold"
+                    >
+                      +{habit.counter_up || 0}
+                    </button>
+                  )}
+                  {Boolean(habit.habit_negative) && (
+                    <button
+                      type="button"
+                      onClick={() => handleScoreTask(habit.id, 'down')}
+                      className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded text-[10px] font-bold"
+                    >
+                      -{habit.counter_down || 0}
+                    </button>
+                  )}
+                </div>
+              )}
+              <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
+                {habit.difficulty === 'trivial' ? 'XS' : habit.difficulty === 'easy' ? 'S' : habit.difficulty === 'medium' ? 'M' : 'L'}
+              </span>
+            </div>
+          </div>
+        );
+      }
 
       return (
         <div
@@ -1350,13 +2346,24 @@ export const App: React.FC = () => {
                   <span
                     className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 ${
                       habit.difficulty === 'hard'
-                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                        ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                         : habit.difficulty === 'medium'
-                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                        : habit.difficulty === 'trivial'
+                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                     }`}
+                    title={
+                      habit.difficulty === 'trivial'
+                        ? 'XS (5–15m)'
+                        : habit.difficulty === 'medium'
+                        ? 'M (30–60m)'
+                        : habit.difficulty === 'hard'
+                        ? 'L (60m+)'
+                        : 'S (15–30m)'
+                    }
                   >
-                    {habit.difficulty}
+                    {habit.difficulty === 'trivial' ? 'XS' : habit.difficulty === 'easy' ? 'S' : habit.difficulty === 'medium' ? 'M' : 'L'}
                   </span>
                 </div>
               </div>
@@ -1383,13 +2390,63 @@ export const App: React.FC = () => {
                 </p>
               )}
 
-              {/* Cadence info & Streak */}
-              <div className="flex items-center gap-2 mt-1.5 text-[10px] text-stone-400">
+              {/* Habit Stacking Cue Pill */}
+              {habit.anchor_habit_title && (
+                <div className="mt-1 flex items-center gap-1 text-[10px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-800/60 font-medium">
+                  <span>🔗</span>
+                  <span>After: {habit.anchor_habit_title}</span>
+                </div>
+              )}
+
+              {/* Micro-Habit Starter Step Chip with 1-Tap Floor Completion */}
+              {habit.micro_habit_title && (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!isDone) {
+                      handleScoreTask(habit.id, 'up');
+                      setMindfulReflection('🌱 Starter step logged! You maintained your habit momentum on a low-spoon day.');
+                      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+                      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
+                    }
+                  }}
+                  className={`mt-1 inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md border font-medium transition cursor-pointer select-none ${
+                    isDone
+                      ? 'bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                      : 'bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700 active:scale-95'
+                  }`}
+                  title={isDone ? 'Starter step completed' : 'Tap to log starter step (< 30s floor habit)'}
+                >
+                  <span>🌱</span>
+                  <span className="font-semibold">Starter Step:</span>
+                  <span className={isDone ? 'line-through text-stone-500' : ''}>{habit.micro_habit_title}</span>
+                  {!isDone && (
+                    <span className="ml-1 text-[9px] bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.2 rounded font-bold shadow-2xs">
+                      Do Now
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Cadence info & Streak & Compassionate Grace Shield */}
+              <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[10px] text-stone-400">
                 {habit.type === 'daily' && (
-                  <span className="flex items-center gap-0.5 text-amber-600 font-semibold font-mono">
-                    <Flame className="w-3 h-3 text-amber-500" />
-                    {habit.streak}d streak
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="flex items-center gap-0.5 text-amber-600 font-semibold font-mono">
+                      <Flame className="w-3 h-3 text-amber-500" />
+                      {habit.streak}d streak
+                    </span>
+                    <StreakGrowthBadge streak={habit.streak} size="xs" />
+                    {inGrace && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-sky-100 dark:bg-sky-950/70 border border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200"
+                        title={getStreakGraceMessage(habit.streak, true)}
+                      >
+                        <span>🛡️</span>
+                        <span>Shield Active</span>
+                      </span>
+                    )}
+                  </div>
                 )}
                 <span>•</span>
                 <span className="capitalize text-stone-500">
@@ -1465,6 +2522,19 @@ export const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setGoblinTask(habit);
+                  setGoblinModalOpen(true);
+                }}
+                className="text-[10px] text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
+                title="Goblin Brain: Demolish this routine into micro starter steps"
+              >
+                <span>👺</span>
+                <span className="hidden sm:inline">Goblin</span>
+              </button>
+
               {!isScheduled ? (
                 <button
                   onClick={() => handleQuickScheduleHabitToAgenda(habit.id)}
@@ -1768,6 +2838,30 @@ export const App: React.FC = () => {
               </button>
             </div>
 
+            {/* Compassionate Sweep to Tomorrow */}
+            <button
+              type="button"
+              onClick={handleSweepIncompleteToTomorrow}
+              className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 rounded-md text-[11px] font-medium transition cursor-pointer"
+              title="Gently shift all unfinished tasks scheduled for today to tomorrow with zero guilt"
+            >
+              <span>🧹</span>
+              <span className="hidden sm:inline">Sweep to Tomorrow</span>
+            </button>
+
+            {/* Compassionate Stale Backlog Triage */}
+            {staleTasksList.length > 0 && (
+              <button
+                type="button"
+                onClick={handleTriageStaleTasks}
+                className="flex items-center gap-1 px-2 py-0.5 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-900 dark:text-purple-200 border border-purple-200/80 dark:border-purple-800 rounded-md text-[11px] font-medium transition cursor-pointer"
+                title="Gently rest stale tasks (>7 days old) into Someday"
+              >
+                <span>🧺</span>
+                <span className="hidden sm:inline">Rest Stale ({staleTasksList.length})</span>
+              </button>
+            )}
+
             {/* Fast: Create Task for Today */}
             <button
               onClick={() => {
@@ -1794,8 +2888,89 @@ export const App: React.FC = () => {
           ) : (
             tasksList.map((task) => {
               const isDone = Boolean(task.completed);
+              if (zenMode && isDone) return null;
               const hasDeadline = Boolean(task.due_date || task.scheduled_date);
               const isDueToday = task.due_date?.slice(0, 10) === todayStr;
+
+              if (densityMode === 'compact') {
+                return (
+                  <div
+                    key={task.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', task.id);
+                      setDraggedTaskId(task.id);
+                    }}
+                    onDragEnd={() => setDraggedTaskId(null)}
+                    onClick={() => {
+                      setEditingTask(task);
+                      setTaskModalOpen(true);
+                    }}
+                    className={`px-3 py-2 rounded-xl border transition shadow-2xs flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+                      isDone
+                        ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-60'
+                        : 'bg-white dark:bg-stone-800 border-stone-200/90 dark:border-stone-700/80 hover:border-indigo-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleScoreTask(task.id, 'up');
+                        }}
+                        className="text-stone-400 hover:text-indigo-600 shrink-0"
+                        title={isDone ? 'Mark incomplete' : 'Mark complete'}
+                      >
+                        {isDone ? (
+                          <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                        ) : (
+                          <Circle className="w-4 h-4" />
+                        )}
+                      </button>
+                      <span className={`text-xs font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>
+                        {task.title}
+                      </span>
+                      {isTaskStale(task) && (
+                        <span className="text-[10px] text-purple-600 dark:text-purple-400 font-mono shrink-0" title="Stale task (>7 days)">
+                          ⏳
+                        </span>
+                      )}
+                      {task.scheduled_start && (
+                        <span className="text-[10px] text-indigo-600 font-mono font-medium flex items-center gap-0.5 shrink-0">
+                          <Clock className="w-3 h-3" />
+                          {task.scheduled_start}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handlePushTaskToTomorrow(task.id)}
+                        className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200"
+                        title="Push to tomorrow"
+                      >
+                        ⏩
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGoblinTask(task);
+                          setGoblinModalOpen(true);
+                        }}
+                        className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200"
+                        title="Goblin Brain Starter Steps"
+                      >
+                        👺
+                      </button>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
+                        {task.difficulty === 'trivial' ? 'XS' : task.difficulty === 'easy' ? 'S' : task.difficulty === 'medium' ? 'M' : 'L'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <div
@@ -1842,13 +3017,24 @@ export const App: React.FC = () => {
                         <span
                           className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 ${
                             task.difficulty === 'hard'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                               : task.difficulty === 'medium'
-                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : task.difficulty === 'trivial'
+                              ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                              : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                           }`}
+                          title={
+                            task.difficulty === 'trivial'
+                              ? 'XS (5–15m)'
+                              : task.difficulty === 'medium'
+                              ? 'M (30–60m)'
+                              : task.difficulty === 'hard'
+                              ? 'L (60m+)'
+                              : 'S (15–30m)'
+                          }
                         >
-                          {task.difficulty}
+                          {task.difficulty === 'trivial' ? 'XS' : task.difficulty === 'easy' ? 'S' : task.difficulty === 'medium' ? 'M' : 'L'}
                         </span>
                       </div>
 
@@ -1872,6 +3058,69 @@ export const App: React.FC = () => {
                         <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
                           {task.notes}
                         </p>
+                      )}
+
+                      {/* Habit Stacking Cue Pill */}
+                      {task.anchor_habit_title && (
+                        <div className="mt-1 flex items-center gap-1 text-[10px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-800/60 font-medium">
+                          <span>🔗</span>
+                          <span>After: {task.anchor_habit_title}</span>
+                        </div>
+                      )}
+
+                      {/* Micro-Habit Starter Step Chip with 1-Tap Floor Completion */}
+                      {task.micro_habit_title && (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isDone) {
+                              handleScoreTask(task.id, 'up');
+                              setMindfulReflection('🌱 Starter step logged! You maintained your momentum on a low-spoon day.');
+                              if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+                              reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
+                            }
+                          }}
+                          className={`mt-1 inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md border font-medium transition cursor-pointer select-none ${
+                            isDone
+                              ? 'bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                              : 'bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700 active:scale-95'
+                          }`}
+                          title={isDone ? 'Starter step completed' : 'Tap to complete starter step (< 30s)'}
+                        >
+                          <span>🌱</span>
+                          <span className="font-semibold">Starter Step:</span>
+                          <span className={isDone ? 'line-through text-stone-500' : ''}>{task.micro_habit_title}</span>
+                          {!isDone && (
+                            <span className="ml-1 text-[9px] bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.2 rounded font-bold shadow-2xs">
+                              Do Now
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Compassionate Stale Backlog Triage Badge */}
+                      {isTaskStale(task) && (
+                        <div className="mt-1 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800/60 font-medium inline-flex items-center gap-1">
+                            <span>⏳</span>
+                            <span>Stale (7d+)</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const futureDate = new Date();
+                              futureDate.setDate(futureDate.getDate() + 30);
+                              handleScheduleTask(task.id, futureDate.toISOString().slice(0, 10));
+                              setMindfulReflection('🧺 Task rested to Someday. Zero guilt!');
+                              if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+                              reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
+                            }}
+                            className="text-[10px] text-stone-600 dark:text-stone-400 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/60 px-1.5 py-0.5 rounded border border-stone-200 dark:border-stone-700 transition cursor-pointer"
+                            title="Rest task to Someday (+30 days)"
+                          >
+                            <span>Rest to Someday</span>
+                          </button>
+                        </div>
                       )}
 
                       {/* Timeline Date & Scheduling Controls */}
@@ -1922,6 +3171,31 @@ export const App: React.FC = () => {
                               <span>{t.taskBtnAgenda}</span>
                             </button>
                           )}
+
+                          {/* 1-Tap Defer to Tomorrow */}
+                          <button
+                            type="button"
+                            onClick={() => handlePushTaskToTomorrow(task.id)}
+                            className="text-[10px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
+                            title="Gently push task to tomorrow"
+                          >
+                            <span>⏩</span>
+                            <span className="hidden sm:inline">Tomorrow</span>
+                          </button>
+
+                          {/* Goblin Brain Demolisher */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGoblinTask(task);
+                              setGoblinModalOpen(true);
+                            }}
+                            className="text-[10px] text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
+                            title="Goblin Brain: Demolish this task into micro starter steps"
+                          >
+                            <span>👺</span>
+                            <span className="hidden sm:inline">Goblin</span>
+                          </button>
 
                           {hasDeadline && (
                             <button

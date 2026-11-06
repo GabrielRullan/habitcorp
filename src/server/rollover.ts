@@ -73,14 +73,15 @@ export function runUserRollover(userId: string, currentDateStr?: string): void {
 
   const previousDate = user.last_rollover_date;
 
-  // 1. Rollover Periodical Dailies
+  // 1. Rollover Periodical Dailies & Habits
   const dailies = db
     .prepare(
-      `SELECT id, frequency, repeat_interval, repeat_days, streak, best_streak, completed, last_completed_date, created_at
-       FROM tasks WHERE user_id = ? AND type = 'daily'`
+      `SELECT id, type, frequency, repeat_interval, repeat_days, streak, best_streak, completed, last_completed_date, created_at
+       FROM tasks WHERE user_id = ? AND (type = 'daily' OR type = 'habit')`
     )
     .all(userId) as Array<{
     id: string;
+    type: string;
     frequency: string;
     repeat_interval: number;
     repeat_days: string;
@@ -101,21 +102,23 @@ export function runUserRollover(userId: string, currentDateStr?: string): void {
     let newCompleted = completedToday ? 1 : 0;
     let newStreak = daily.streak;
 
-    if (!completedToday && previousDate && previousDate < today) {
+    if (!completedToday && daily.type === 'daily' && previousDate && previousDate < today) {
       // Check if it was due on any day between previousDate (inclusive) and today (exclusive)
       // and wasn't completed on that day
       const diff = Math.min(30, daysBetween(previousDate, today));
-      let missedScheduledDay = false;
+      let missedDaysCount = 0;
       for (let i = 0; i < diff; i++) {
         const d = new Date(`${previousDate}T12:00:00Z`);
         d.setUTCDate(d.getUTCDate() + i);
         const checkDate = d.toISOString().slice(0, 10);
         if (isDailyDueOnDate(daily, checkDate) && daily.last_completed_date !== checkDate) {
-          missedScheduledDay = true;
-          break;
+          missedDaysCount++;
         }
       }
-      if (missedScheduledDay) {
+      // James Clear's "Never miss twice" rule (Cochran & Tesser streak resilience):
+      // A single missed scheduled day is covered by a 1-day grace period to prevent the "what-the-hell" abandonment effect.
+      // Missing 2 or more consecutive scheduled days resets the streak.
+      if (missedDaysCount > 1) {
         newStreak = 0;
       }
     }

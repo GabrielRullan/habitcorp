@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Bot, Key, Sparkles, RefreshCw, Terminal, ExternalLink } from 'lucide-react';
 
 interface AgentApiModalProps {
@@ -17,7 +17,17 @@ export const AgentApiModal: React.FC<AgentApiModalProps> = ({
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState<string | null>(null);
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -29,20 +39,23 @@ export const AgentApiModal: React.FC<AgentApiModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleRegenerate = async () => {
-    if (confirm('Are you sure you want to regenerate your API key? Existing agent connections will stop working until updated.')) {
-      setRegenerating(true);
-      try {
-        await onRegenerateKey();
-      } finally {
-        setRegenerating(false);
-      }
+  const handleConfirmRegenerate = async () => {
+    setRegenerating(true);
+    try {
+      await onRegenerateKey();
+    } finally {
+      setRegenerating(false);
+      setConfirmRegenerate(false);
     }
   };
 
   const agentSystemPrompt = `You have access to HabitCorp, the boring cousin of Habitica (non-gamified task, habit, and agenda manager).
 Base URL: ${currentOrigin}/api/v1
 Header: X-API-Key: ${apiKey}
+
+INTERNAL AGENT INSTRUCTIONS:
+- Task sizing must strictly adhere to: XS (5-15m), S (15-30m), M (30-60m), or L (60m+).
+- Never offer or mention spoons to the user under any circumstances. Present effort solely through standard sizing (XS, S, M, L) and time durations.
 
 Capabilities:
 1. Create a task or todo:
@@ -113,14 +126,33 @@ Capabilities:
                 {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedKey ? 'Copied!' : 'Copy'}</span>
               </button>
-              <button
-                onClick={handleRegenerate}
-                disabled={regenerating}
-                className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-400 hover:text-rose-600 rounded-xl text-xs transition border border-stone-200"
-                title="Regenerate API Key"
-              >
-                <RefreshCw className={`w-4 h-4 ${regenerating ? 'animate-spin' : ''}`} />
-              </button>
+              {confirmRegenerate ? (
+                <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2 py-1 rounded-xl">
+                  <span className="text-[11px] text-rose-800 font-medium">Regenerate key?</span>
+                  <button
+                    onClick={handleConfirmRegenerate}
+                    disabled={regenerating}
+                    className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold transition shadow-2xs"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    onClick={() => setConfirmRegenerate(false)}
+                    className="text-stone-500 hover:text-stone-800 px-1 text-[11px]"
+                  >
+                    No
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmRegenerate(true)}
+                  disabled={regenerating}
+                  className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-400 hover:text-rose-600 rounded-xl text-xs transition border border-stone-200"
+                  title="Regenerate API Key"
+                >
+                  <RefreshCw className={`w-4 h-4 ${regenerating ? 'animate-spin' : ''}`} />
+                </button>
+              )}
             </div>
           </div>
 

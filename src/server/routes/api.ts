@@ -1,3 +1,40 @@
+/**
+ * ============================================================================
+ * CADENCE / HABITCORP — REST API ROUTE CONTROLLER (api.ts)
+ * ============================================================================
+ * 
+ * ROUTE INDEX & ENDPOINT DIRECTORY:
+ * ----------------------------------------------------------------------------
+ * 1. AUTHENTICATION & SESSIONS        -> Lines ~45-310
+ *    - POST /auth/register, /auth/login, /auth/magic-link
+ *    - GET  /auth/verify, /auth/me, /auth/default-user
+ * 2. PROJECTS MANAGEMENT             -> Lines ~310-410
+ *    - GET, POST /projects | DELETE /projects/:id
+ * 3. TASKS & HABITS CRUD             -> Lines ~410-750
+ *    - GET  /tasks                   (lists tasks + subtasks for active user)
+ *    - POST /tasks                   (create todo / daily / habit)
+ *    - PATCH /tasks/:id              (update schedule, tags, dates, subtasks)
+ *    - DELETE /tasks/:id             (permanently delete task + cascade subtasks)
+ * 4. HABIT & ROUTINE SCORING         -> Lines ~750-840
+ *    - POST /tasks/:id/score         (toggles completion or increment +/- counters)
+ * 5. CHECKLIST SUBTASKS              -> Lines ~840-950
+ *    - POST /tasks/:id/subtasks | PATCH, DELETE /subtasks/:id
+ * 6. AGENDA & TIME-BLOCKING ENGINE   -> Lines ~950-1300
+ *    - GET  /agenda                  (merged timeline: meetings + tasks + ghosts)
+ *    - GET  /meetings                (dynamic recurrence expansion for date range)
+ *    - POST, PATCH, DELETE /meetings/:id
+ * 7. CALENDAR SUBSCRIPTIONS (ICS)    -> Lines ~1300-1450
+ *    - GET, POST /calendars          (URL normalization & auto-sync)
+ *    - POST /calendars/:id/sync      (manual re-sync with HTML guard)
+ *    - DELETE /calendars/:id         (cascade removes imported events)
+ * 8. GHOST CONTACTS (Family Sync)    -> Lines ~1450-1650
+ *    - GET, POST, PATCH, DELETE /ghosts
+ *    - POST /ghosts/:id/sync         (sync family calendar .ics feeds)
+ * 9. AI & GOBLIN BRAIN SERVICES      -> Lines ~1750-1850
+ *    - POST /ai/demolish-task        (micro-step starter generator)
+ * ============================================================================
+ */
+
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { getDb, DIFFICULTY_WEIGHTS } from '../db.js';
@@ -10,6 +47,7 @@ import {
 } from '../auth.js';
 import { runUserRollover, getTodayDateString, isDailyDueOnDate } from '../rollover.js';
 import { parseIcsContent, importEventsIntoDb } from '../ics.js';
+import { safeFetch, normalizeCalendarUrl } from '../services/safeFetch.js';
 
 export const apiRouter = Router();
 
@@ -167,11 +205,13 @@ apiRouter.post('/auth/magic-link', (req, res) => {
   console.log(`🔗 URL:   ${magicUrl}`);
   console.log(`======================================================\n`);
 
+  const isDevOrTest = process.env.NODE_ENV !== 'production';
   res.json({
     ok: true,
-    message: 'Magic login link generated successfully.',
-    token,
-    url: magicUrl,
+    message: isDevOrTest
+      ? 'Magic login link generated successfully.'
+      : 'If your email is registered, a sign-in link has been sent.',
+    ...(isDevOrTest ? { token, url: magicUrl } : {}),
     user: {
       id: user.id,
       username: user.username,
@@ -364,7 +404,7 @@ apiRouter.get('/tasks', (req, res) => {
   const formatted = rows
     .map((r) => {
       let is_due_today = false;
-      if (r.type === 'daily') {
+      if (r.type === 'daily' || r.type === 'habit') {
         is_due_today = isDailyDueOnDate(r, today);
       } else if (r.due_date) {
         is_due_today = r.due_date.slice(0, 10) <= today && !r.completed;
@@ -400,9 +440,14 @@ apiRouter.post('/tasks', (req, res) => {
 
   const taskId = crypto.randomUUID();
   const type = ['habit', 'daily', 'todo'].includes(b.type) ? b.type : 'todo';
-  const difficulty = ['trivial', 'easy', 'medium', 'hard'].includes(b.difficulty)
-    ? b.difficulty
-    : 'easy';
+  let difficulty = 'easy';
+  if (b.difficulty !== undefined && b.difficulty !== null) {
+    if (!['trivial', 'easy', 'medium', 'hard'].includes(b.difficulty)) {
+      res.status(400).json({ error: "Invalid difficulty level. Must be one of: 'trivial', 'easy', 'medium', 'hard'." });
+      return;
+    }
+    difficulty = b.difficulty;
+  }
   const weight = DIFFICULTY_WEIGHTS[difficulty] || 2;
   const now = new Date().toISOString();
 
@@ -437,14 +482,14 @@ apiRouter.post('/tasks', (req, res) => {
   db.prepare(`
     INSERT INTO tasks (
       id, user_id, project_id, type, title, notes, difficulty, difficulty_weight, tags,
-      time_of_day,
+      time_of_day, anchor_task_id, anchor_habit_title, micro_habit_title,
       habit_positive, habit_negative, counter_up, counter_down, habit_reset_period,
       frequency, repeat_interval, repeat_days, streak, best_streak, completed,
       start_date, due_date, scheduled_date, scheduled_start, scheduled_duration,
       created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?,
+      ?, ?, ?, ?,
       ?, ?, 0, 0, ?,
       ?, ?, ?, 0, 0, 0,
       ?, ?, ?, ?, ?,
@@ -461,6 +506,9 @@ apiRouter.post('/tasks', (req, res) => {
     weight,
     tags,
     timeOfDay,
+    b.anchor_task_id || null,
+    b.anchor_habit_title || '',
+    b.micro_habit_title || '',
     habitPositive,
     habitNegative,
     habitResetPeriod,
@@ -508,70 +556,81 @@ apiRouter.post('/tasks/batch', (req, res) => {
   const createdIds: string[] = [];
   const now = new Date().toISOString();
 
-  for (const b of tasks) {
-    if (!b.title) continue;
-    const taskId = crypto.randomUUID();
-    const type = ['habit', 'daily', 'todo'].includes(b.type) ? b.type : 'todo';
-    const difficulty = ['trivial', 'easy', 'medium', 'hard'].includes(b.difficulty)
-      ? b.difficulty
-      : 'easy';
-    const weight = DIFFICULTY_WEIGHTS[difficulty] || 2;
-    const timeOfDay = parseTimeOfDay(b.time_of_day) || 'anytime';
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const b of tasks) {
+      if (!b.title) continue;
+      const taskId = crypto.randomUUID();
+      const type = ['habit', 'daily', 'todo'].includes(b.type) ? b.type : 'todo';
+      const difficulty = ['trivial', 'easy', 'medium', 'hard'].includes(b.difficulty)
+        ? b.difficulty
+        : 'easy';
+      const weight = DIFFICULTY_WEIGHTS[difficulty] || 2;
+      const timeOfDay = parseTimeOfDay(b.time_of_day) || 'anytime';
 
-    db.prepare(`
-      INSERT INTO tasks (
-        id, user_id, project_id, type, title, notes, difficulty, difficulty_weight, tags,
-        time_of_day,
-        habit_positive, habit_negative, counter_up, counter_down, habit_reset_period,
-        frequency, repeat_interval, repeat_days, streak, best_streak, completed,
-        start_date, due_date, scheduled_date, scheduled_start, scheduled_duration,
-        created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?,
-        ?, ?, 0, 0, ?,
-        ?, ?, ?, 0, 0, 0,
-        ?, ?, ?, ?, ?,
-        ?, ?
-      )
-    `).run(
-      taskId,
-      userId,
-      b.project_id || null,
-      type,
-      b.title.trim(),
-      b.notes || '',
-      difficulty,
-      weight,
-      JSON.stringify(b.tags || []),
-      timeOfDay,
-      b.habit_positive !== undefined ? (b.habit_positive ? 1 : 0) : 1,
-      b.habit_negative !== undefined ? (b.habit_negative ? 1 : 0) : 0,
-      b.habit_reset_period || 'daily',
-      b.frequency || 'daily',
-      b.repeat_interval || 1,
-      JSON.stringify(b.repeat_days || [0, 1, 2, 3, 4, 5, 6]),
-      b.start_date || null,
-      b.due_date || null,
-      b.scheduled_date || null,
-      b.scheduled_start || null,
-      Number(b.scheduled_duration) || 30,
-      now,
-      now
-    );
+      db.prepare(`
+        INSERT INTO tasks (
+          id, user_id, project_id, type, title, notes, difficulty, difficulty_weight, tags,
+          time_of_day, anchor_task_id, anchor_habit_title, micro_habit_title,
+          habit_positive, habit_negative, counter_up, counter_down, habit_reset_period,
+          frequency, repeat_interval, repeat_days, streak, best_streak, completed,
+          start_date, due_date, scheduled_date, scheduled_start, scheduled_duration,
+          created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, 0, 0, ?,
+          ?, ?, ?, 0, 0, 0,
+          ?, ?, ?, ?, ?,
+          ?, ?
+        )
+      `).run(
+        taskId,
+        userId,
+        b.project_id || null,
+        type,
+        b.title.trim(),
+        b.notes || '',
+        difficulty,
+        weight,
+        JSON.stringify(b.tags || []),
+        timeOfDay,
+        b.anchor_task_id || null,
+        b.anchor_habit_title || '',
+        b.micro_habit_title || '',
+        b.habit_positive !== undefined ? (b.habit_positive ? 1 : 0) : 1,
+        b.habit_negative !== undefined ? (b.habit_negative ? 1 : 0) : 0,
+        b.habit_reset_period || 'daily',
+        b.frequency || 'daily',
+        b.repeat_interval || 1,
+        JSON.stringify(b.repeat_days || [0, 1, 2, 3, 4, 5, 6]),
+        b.start_date || null,
+        b.due_date || null,
+        b.scheduled_date || null,
+        b.scheduled_start || null,
+        Number(b.scheduled_duration) || 30,
+        now,
+        now
+      );
 
-    if (Array.isArray(b.subtasks)) {
-      const insertSub = db.prepare(`
-        INSERT INTO subtasks (id, task_id, title, completed, position)
-        VALUES (?, ?, ?, 0, ?)
-      `);
-      b.subtasks.forEach((sub: any, idx: number) => {
-        const title = typeof sub === 'string' ? sub : sub?.title;
-        if (title) insertSub.run(crypto.randomUUID(), taskId, title.trim(), idx);
-      });
+      if (Array.isArray(b.subtasks)) {
+        const insertSub = db.prepare(`
+          INSERT INTO subtasks (id, task_id, title, completed, position)
+          VALUES (?, ?, ?, 0, ?)
+        `);
+        b.subtasks.forEach((sub: any, idx: number) => {
+          const title = typeof sub === 'string' ? sub : sub?.title;
+          if (title) insertSub.run(crypto.randomUUID(), taskId, title.trim(), idx);
+        });
+      }
+
+      createdIds.push(taskId);
     }
-
-    createdIds.push(taskId);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    res.status(500).json({ error: 'Failed to process batch tasks atomically.' });
+    return;
   }
 
   const createdTasks = createdIds.map((id) => getTaskWithSubtasks(id, userId));
@@ -624,6 +683,18 @@ apiRouter.patch('/tasks/:id', (req, res) => {
     }
     updates.push('time_of_day = ?');
     values.push(parsed);
+  }
+  if (b.anchor_task_id !== undefined) {
+    updates.push('anchor_task_id = ?');
+    values.push(b.anchor_task_id || null);
+  }
+  if (b.anchor_habit_title !== undefined) {
+    updates.push('anchor_habit_title = ?');
+    values.push(b.anchor_habit_title || '');
+  }
+  if (b.micro_habit_title !== undefined) {
+    updates.push('micro_habit_title = ?');
+    values.push(b.micro_habit_title || '');
   }
   if (b.difficulty !== undefined && ['trivial', 'easy', 'medium', 'hard'].includes(b.difficulty)) {
     updates.push('difficulty = ?');
@@ -726,6 +797,10 @@ apiRouter.post('/tasks/:id/score', (req, res) => {
   const userId = req.user!.id;
   const taskId = req.params.id;
   const db = getDb();
+
+  // Run user rollover to ensure fresh day completion state before scoring
+  runUserRollover(userId);
+
   const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(taskId, userId) as any;
 
   if (!task) {
@@ -735,14 +810,12 @@ apiRouter.post('/tasks/:id/score', (req, res) => {
 
   const today = getTodayDateString();
   const now = new Date().toISOString();
-  const direction = req.body?.direction || 'up'; // 'up' or 'down'
+  const direction = req.body?.direction || 'toggle'; // 'counter_up', 'counter_down', 'toggle', 'up', 'down'
 
-  if (task.type === 'habit') {
-    if (direction === 'up') {
-      db.prepare('UPDATE tasks SET counter_up = counter_up + 1, updated_at = ? WHERE id = ?').run(now, taskId);
-    } else {
-      db.prepare('UPDATE tasks SET counter_down = counter_down + 1, updated_at = ? WHERE id = ?').run(now, taskId);
-    }
+  if (direction === 'counter_up' || (task.type === 'habit' && direction === 'up')) {
+    db.prepare('UPDATE tasks SET counter_up = counter_up + 1, updated_at = ? WHERE id = ?').run(now, taskId);
+  } else if (direction === 'counter_down' || (task.type === 'habit' && direction === 'down')) {
+    db.prepare('UPDATE tasks SET counter_down = counter_down + 1, updated_at = ? WHERE id = ?').run(now, taskId);
   } else if (task.type === 'daily') {
     const isCompleted = task.completed === 1;
     if (!isCompleted) {
@@ -1158,6 +1231,11 @@ apiRouter.patch('/meetings/:id', (req, res) => {
     return;
   }
 
+  if (current.source_id) {
+    res.status(403).json({ error: 'External synced calendar events are read-only.' });
+    return;
+  }
+
   const b = req.body || {};
   const updates: string[] = [];
   const values: any[] = [];
@@ -1253,22 +1331,36 @@ apiRouter.patch('/meetings/:id', (req, res) => {
 });
 
 apiRouter.delete('/meetings/:id', (req, res) => {
+  const userId = req.user!.id;
   const db = getDb();
-  const result = db.prepare('DELETE FROM calendar_events WHERE id = ? AND user_id = ?').run(
+  const current = db.prepare('SELECT * FROM calendar_events WHERE id = ? AND user_id = ?').get(
     req.params.id,
-    req.user!.id
-  );
-  if (result.changes === 0) {
+    userId
+  ) as any;
+  if (!current) {
     res.status(404).json({ error: 'Meeting not found.' });
     return;
   }
+  if (current.source_id) {
+    res.status(403).json({ error: 'External synced calendar events are read-only and cannot be deleted.' });
+    return;
+  }
+  db.prepare('DELETE FROM calendar_events WHERE id = ? AND user_id = ?').run(
+    req.params.id,
+    userId
+  );
   res.json({ success: true, message: 'Meeting deleted.' });
 });
 
 // Calendar Feeds (ICS) Management
 apiRouter.get('/calendars', (req, res) => {
   const db = getDb();
-  const feeds = db.prepare('SELECT * FROM calendar_sources WHERE user_id = ? ORDER BY created_at ASC').all(req.user!.id);
+  const feeds = db.prepare(`
+    SELECT c.*, (SELECT COUNT(*) FROM calendar_events WHERE source_id = c.id) as events_count
+    FROM calendar_sources c
+    WHERE c.user_id = ?
+    ORDER BY c.created_at ASC
+  `).all(req.user!.id);
   res.json({ calendars: feeds });
 });
 
@@ -1282,6 +1374,7 @@ apiRouter.post('/calendars', async (req, res) => {
     return;
   }
 
+  const normalizedUrl = normalizeCalendarUrl(ics_url.trim());
   const sourceId = crypto.randomUUID();
   const hexColor = color || '#6366f1';
   const now = new Date().toISOString();
@@ -1289,23 +1382,35 @@ apiRouter.post('/calendars', async (req, res) => {
   db.prepare(`
     INSERT INTO calendar_sources (id, user_id, name, ics_url, color, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(sourceId, userId, name.trim(), ics_url.trim(), hexColor, now);
+  `).run(sourceId, userId, name.trim(), normalizedUrl, hexColor, now);
 
   // Attempt initial sync immediately
   let syncedEventsCount = 0;
+  let syncError: string | null = null;
   try {
-    const response = await fetch(ics_url.trim());
-    if (response.ok) {
+    const response = await safeFetch(normalizedUrl);
+    if (!response.ok) {
+      syncError = `HTTP ${response.status}: ${response.statusText || 'Failed to fetch calendar'}`;
+    } else {
       const text = await response.text();
-      const events = parseIcsContent(text);
-      syncedEventsCount = importEventsIntoDb(userId, sourceId, hexColor, events);
+      if (text.includes('<!DOCTYPE') || text.includes('<html') || (!text.includes('BEGIN:VCALENDAR') && !text.includes('BEGIN:VEVENT'))) {
+        syncError = 'The URL returned a web page (HTML) instead of an iCalendar (.ics) feed. Make sure to use the "Secret address in iCal format" or a direct .ics link.';
+      } else {
+        const events = parseIcsContent(text);
+        syncedEventsCount = importEventsIntoDb(userId, sourceId, hexColor, events);
+      }
     }
-  } catch (err) {
+  } catch (err: any) {
+    syncError = err.message || 'Error fetching calendar feed';
     console.error('Initial calendar sync error:', err);
   }
 
-  const feed = db.prepare('SELECT * FROM calendar_sources WHERE id = ?').get(sourceId);
-  res.status(201).json({ ...feed, synced_events_count: syncedEventsCount });
+  const feed = db.prepare(`
+    SELECT c.*, (SELECT COUNT(*) FROM calendar_events WHERE source_id = c.id) as events_count
+    FROM calendar_sources c
+    WHERE c.id = ?
+  `).get(sourceId);
+  res.status(201).json({ ...feed, synced_events_count: syncedEventsCount, sync_error: syncError });
 });
 
 apiRouter.post('/calendars/:id/sync', async (req, res) => {
@@ -1318,13 +1423,18 @@ apiRouter.post('/calendars/:id/sync', async (req, res) => {
     return;
   }
 
+  const normalizedUrl = normalizeCalendarUrl(feed.ics_url);
   try {
-    const response = await fetch(feed.ics_url);
+    const response = await safeFetch(normalizedUrl);
     if (!response.ok) {
-      res.status(502).json({ error: `Failed to fetch ICS feed: HTTP ${response.status}` });
+      res.status(502).json({ error: `Failed to fetch ICS feed: HTTP ${response.status} (${response.statusText || 'Error'})` });
       return;
     }
     const text = await response.text();
+    if (text.includes('<!DOCTYPE') || text.includes('<html') || (!text.includes('BEGIN:VCALENDAR') && !text.includes('BEGIN:VEVENT'))) {
+      res.status(422).json({ error: 'The URL returned a web page (HTML) instead of an iCalendar (.ics) feed. Make sure you are using a direct .ics link or the secret iCal address from your calendar settings.' });
+      return;
+    }
     const events = parseIcsContent(text);
     const count = importEventsIntoDb(userId, feed.id, feed.color, events);
     res.json({ message: 'Calendar synced successfully.', count });
@@ -1399,7 +1509,12 @@ apiRouter.patch('/calendars/:id', (req, res) => {
 
 apiRouter.get('/ghosts', (req, res) => {
   const db = getDb();
-  const ghosts = db.prepare('SELECT * FROM ghosts WHERE user_id = ? ORDER BY created_at ASC').all(req.user!.id);
+  const ghosts = db.prepare(`
+    SELECT g.*, (SELECT COUNT(*) FROM calendar_events WHERE (ghost_id = g.id OR ghost_ids LIKE '%' || g.id || '%')) as events_count
+    FROM ghosts g
+    WHERE g.user_id = ?
+    ORDER BY g.created_at ASC
+  `).all(req.user!.id);
   res.json({ ghosts });
 });
 
@@ -1416,7 +1531,7 @@ apiRouter.post('/ghosts', async (req, res) => {
   const ghostId = crypto.randomUUID();
   const hexColor = color || '#ec4899';
   const now = new Date().toISOString();
-  const url = (ics_url || '').trim();
+  const url = normalizeCalendarUrl((ics_url || '').trim());
 
   db.prepare(`
     INSERT INTO ghosts (id, user_id, name, relation, color, ics_url, created_at)
@@ -1424,24 +1539,36 @@ apiRouter.post('/ghosts', async (req, res) => {
   `).run(ghostId, userId, name.trim(), (relation || '').trim(), hexColor, url, now);
 
   let syncedEventsCount = 0;
+  let syncError: string | null = null;
   if (url) {
     try {
-      const response = await fetch(url);
-      if (response.ok) {
+      const response = await safeFetch(url);
+      if (!response.ok) {
+        syncError = `HTTP ${response.status}: ${response.statusText || 'Failed to fetch calendar'}`;
+      } else {
         const text = await response.text();
-        const events = parseIcsContent(text);
-        syncedEventsCount = importEventsIntoDb(userId, null, hexColor, events, {
-          ghostId,
-          ghostName: name.trim(),
-        });
+        if (text.includes('<!DOCTYPE') || text.includes('<html') || (!text.includes('BEGIN:VCALENDAR') && !text.includes('BEGIN:VEVENT'))) {
+          syncError = 'The URL returned a web page (HTML) instead of an iCalendar (.ics) feed.';
+        } else {
+          const events = parseIcsContent(text);
+          syncedEventsCount = importEventsIntoDb(userId, null, hexColor, events, {
+            ghostId,
+            ghostName: name.trim(),
+          });
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
+      syncError = err.message || 'Error fetching ghost calendar';
       console.error('Initial ghost calendar sync error:', err);
     }
   }
 
-  const created = db.prepare('SELECT * FROM ghosts WHERE id = ?').get(ghostId);
-  res.status(201).json({ ...created, synced_events_count: syncedEventsCount });
+  const created = db.prepare(`
+    SELECT g.*, (SELECT COUNT(*) FROM calendar_events WHERE (ghost_id = g.id OR ghost_ids LIKE '%' || g.id || '%')) as events_count
+    FROM ghosts g
+    WHERE g.id = ?
+  `).get(ghostId);
+  res.status(201).json({ ...created, synced_events_count: syncedEventsCount, sync_error: syncError });
 });
 
 apiRouter.patch('/ghosts/:id', async (req, res) => {
@@ -1461,7 +1588,11 @@ apiRouter.patch('/ghosts/:id', async (req, res) => {
   ['name', 'relation', 'color', 'ics_url'].forEach((field) => {
     if (b[field] !== undefined) {
       updates.push(`${field} = ?`);
-      values.push(b[field]);
+      let val = b[field];
+      if (field === 'ics_url' && typeof val === 'string') {
+        val = normalizeCalendarUrl(val.trim());
+      }
+      values.push(val);
     }
   });
 
@@ -1496,13 +1627,18 @@ apiRouter.post('/ghosts/:id/sync', async (req, res) => {
     return;
   }
 
+  const normalizedUrl = normalizeCalendarUrl(ghost.ics_url);
   try {
-    const response = await fetch(ghost.ics_url);
+    const response = await safeFetch(normalizedUrl);
     if (!response.ok) {
-      res.status(502).json({ error: `Failed to fetch Ghost ICS feed: HTTP ${response.status}` });
+      res.status(502).json({ error: `Failed to fetch Ghost ICS feed: HTTP ${response.status} (${response.statusText || 'Error'})` });
       return;
     }
     const text = await response.text();
+    if (text.includes('<!DOCTYPE') || text.includes('<html') || (!text.includes('BEGIN:VCALENDAR') && !text.includes('BEGIN:VEVENT'))) {
+      res.status(422).json({ error: 'The URL returned a web page (HTML) instead of an iCalendar (.ics) feed. Make sure to use the secret iCal address from your calendar settings.' });
+      return;
+    }
     const events = parseIcsContent(text);
     const count = importEventsIntoDb(userId, null, ghost.color, events, {
       ghostId: ghost.id,
@@ -1627,11 +1763,10 @@ apiRouter.patch('/projects/:id', (req, res) => {
 });
 
 apiRouter.delete('/projects/:id', (req, res) => {
-  const userId = req.user!.id;
   const db = getDb();
   // Unlink tasks first
-  db.prepare('UPDATE tasks SET project_id = NULL WHERE project_id = ? AND user_id = ?').run(req.params.id, userId);
-  const result = db.prepare('DELETE FROM projects WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+  db.prepare('UPDATE tasks SET project_id = NULL WHERE project_id = ?').run(req.params.id);
+  const result = db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
   if (result.changes === 0) {
     res.status(404).json({ error: 'Project not found.' });
     return;
@@ -1647,7 +1782,7 @@ apiRouter.get('/openapi.json', (req, res) => {
       title: 'Cadence Task & Habit Manager API',
       version: '1.0.0',
       description:
-        'Non-gamified productivity platform combining Habits (+/- counters), Periodical Dailies (streaks), Timed Tasks, Untimed Backlog Tasks with 4-tier difficulty, Subtasks, Calendar Meetings, and Agenda Time-Blocking.',
+        'Non-gamified productivity platform combining Habits, Dailies, and Tasks with 4-tier sizing (XS through L). Note for autonomous agents: Do not offer or reference spoons to the user; use sizing XS, S, M, L only.',
     },
     servers: [{ url: '/api/v1' }],
     security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
@@ -1660,7 +1795,9 @@ apiRouter.get('/openapi.json', (req, res) => {
     paths: {
       '/tasks': {
         get: {
+          operationId: 'listTasks',
           summary: 'List tasks with filters',
+          responses: { '200': { description: 'List of matching tasks with subtasks' } },
           parameters: [
             { name: 'type', in: 'query', schema: { type: 'string', enum: ['habit', 'daily', 'todo'] } },
             { name: 'time_of_day', in: 'query', description: 'Filter tasks and habits by WFH routine time of day', schema: { type: 'string', enum: ['morning', 'workday', 'evening', 'anytime'] } },
@@ -1672,7 +1809,9 @@ apiRouter.get('/openapi.json', (req, res) => {
           ],
         },
         post: {
+          operationId: 'createTask',
           summary: 'Create a new task, habit, or daily',
+          responses: { '201': { description: 'Task successfully created' } },
           requestBody: {
             required: true,
             content: {
@@ -1711,7 +1850,9 @@ apiRouter.get('/openapi.json', (req, res) => {
       },
       '/tasks/batch': {
         post: {
+          operationId: 'batchCreateTasks',
           summary: 'Batch create multiple tasks in one call',
+          responses: { '201': { description: 'Tasks successfully created in batch' } },
           requestBody: {
             required: true,
             content: {
@@ -1746,11 +1887,15 @@ apiRouter.get('/openapi.json', (req, res) => {
       },
       '/tasks/{id}': {
         get: {
+          operationId: 'getTask',
           summary: 'Get a specific task with subtasks',
+          responses: { '200': { description: 'Task details' }, '404': { description: 'Task not found' } },
           parameters: [{ name: 'id', in: 'path', required: true }],
         },
         patch: {
+          operationId: 'updateTask',
           summary: 'Update task or habit fields',
+          responses: { '200': { description: 'Updated task' }, '404': { description: 'Task not found' } },
           parameters: [{ name: 'id', in: 'path', required: true }],
           requestBody: {
             content: {
@@ -1773,13 +1918,17 @@ apiRouter.get('/openapi.json', (req, res) => {
           },
         },
         delete: {
+          operationId: 'deleteTask',
           summary: 'Delete a task',
+          responses: { '200': { description: 'Task deleted' }, '404': { description: 'Task not found' } },
           parameters: [{ name: 'id', in: 'path', required: true }],
         },
       },
       '/tasks/{id}/score': {
         post: {
+          operationId: 'scoreTask',
           summary: 'Score a habit (+/-) or toggle completion on a daily / todo',
+          responses: { '200': { description: 'Scored task with updated streaks and counts' } },
           parameters: [{ name: 'id', in: 'path', required: true }],
           requestBody: {
             content: {
@@ -1797,7 +1946,9 @@ apiRouter.get('/openapi.json', (req, res) => {
       },
       '/agenda': {
         get: {
+          operationId: 'getAgenda',
           summary: 'Get unified hourly schedule (meetings + time-blocked tasks)',
+          responses: { '200': { description: 'Agenda items' } },
           parameters: [
             { name: 'start', in: 'query', schema: { type: 'string', example: '2026-10-28' } },
             { name: 'end', in: 'query', schema: { type: 'string', example: '2026-10-28' } },
@@ -1805,9 +1956,15 @@ apiRouter.get('/openapi.json', (req, res) => {
         },
       },
       '/meetings': {
-        get: { summary: 'List calendar meetings' },
+        get: {
+          operationId: 'listMeetings',
+          summary: 'List calendar meetings',
+          responses: { '200': { description: 'List of meetings' } },
+        },
         post: {
+          operationId: 'createMeeting',
           summary: 'Create a calendar meeting',
+          responses: { '201': { description: 'Created calendar meeting' } },
           requestBody: {
             required: true,
             content: {
@@ -1827,6 +1984,30 @@ apiRouter.get('/openapi.json', (req, res) => {
               },
             },
           },
+        },
+      },
+      '/projects': {
+        get: {
+          operationId: 'listProjects',
+          summary: 'List user projects',
+          responses: { '200': { description: 'List of projects' } },
+        },
+        post: {
+          operationId: 'createProject',
+          summary: 'Create a new project category',
+          responses: { '201': { description: 'Created project' } },
+        },
+      },
+      '/ghosts': {
+        get: {
+          operationId: 'listGhosts',
+          summary: 'List family / ghost calendar contacts',
+          responses: { '200': { description: 'List of ghosts' } },
+        },
+        post: {
+          operationId: 'createGhost',
+          summary: 'Add a new ghost contact with optional ICS feed',
+          responses: { '201': { description: 'Created ghost' } },
         },
       },
     },

@@ -20,4 +20,7 @@ export default defineConfig({
     outDir: 'dist/client',
     emptyOutDir: true,
   },
+  test: {
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.agents/**', '**/.git/**'],
+  },
 });

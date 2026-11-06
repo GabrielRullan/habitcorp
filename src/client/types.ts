@@ -29,6 +29,13 @@ export interface Task {
   // Routine & Time-of-day (WFH)
   time_of_day?: TimeOfDay;
 
+  // Habit Stacking (BJ Fogg Cue Anchoring: "After [Anchor], I will [Routine]")
+  anchor_task_id?: string | null;
+  anchor_habit_title?: string | null;
+
+  // Micro-Habit Starter Step (BJ Fogg Tiny Habits: Minimum Viable Routine)
+  micro_habit_title?: string | null;
+
   // Habit
   habit_positive: number;
   habit_negative: number;
@@ -102,6 +109,7 @@ export interface Ghost {
   color: string;
   ics_url: string;
   last_synced_at: string | null;
+  events_count?: number;
   created_at: string;
 }
 
@@ -112,6 +120,7 @@ export interface CalendarSource {
   ics_url: string;
   color: string;
   last_synced_at: string | null;
+  events_count?: number;
   created_at: string;
 }
 

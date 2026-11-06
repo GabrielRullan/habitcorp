@@ -25,6 +25,8 @@ export function getDb(customPath?: string): DatabaseSync {
 
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA busy_timeout = 5000;');
+  db.exec('PRAGMA synchronous = NORMAL;');
   db.exec('PRAGMA foreign_keys = ON;');
 
   initSchema(db);
@@ -99,6 +101,13 @@ export function initSchema(db: DatabaseSync) {
 
       -- Routine & time-of-day organization
       time_of_day TEXT NOT NULL DEFAULT 'anytime' CHECK (time_of_day IN ('morning', 'workday', 'evening', 'anytime')),
+
+      -- Habit Stacking (BJ Fogg Cue Anchoring: "After [Anchor], I will [Routine]")
+      anchor_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+      anchor_habit_title TEXT DEFAULT '',
+
+      -- Micro-Habit Starter Step (BJ Fogg Tiny Habits: Minimum Viable Routine)
+      micro_habit_title TEXT DEFAULT '',
 
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -227,6 +236,18 @@ export function initSchema(db: DatabaseSync) {
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_time_of_day ON tasks(user_id, time_of_day);`);
   } catch {}
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN anchor_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN anchor_habit_title TEXT DEFAULT '';`);
+  } catch {}
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_anchor ON tasks(user_id, anchor_task_id);`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN micro_habit_title TEXT DEFAULT '';`);
+  } catch {}
 
   // Ensure default test user always exists for zero-friction access
   try {
@@ -255,8 +276,6 @@ export function initSchema(db: DatabaseSync) {
           INSERT INTO users (id, username, email, password_hash, api_key, created_at)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run('user_gabriel', 'gabriel', 'gabriel@rullan.cat', hash, 'tk_gabriel_rullan_key', new Date().toISOString());
-
-        seedGabrielRoutines(db, 'user_gabriel');
       } else {
         db.prepare('UPDATE users SET password_hash = ?, email = ? WHERE id = ?').run(hash, 'gabriel@rullan.cat', existingUser.id);
       }

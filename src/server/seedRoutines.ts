@@ -404,10 +404,10 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
   // 5. CALENDAR MEETINGS & FIXED ANCHORS
   const insertEvent = db.prepare(`
     INSERT INTO calendar_events (
-      id, user_id, source_id, ghost_id, is_ghost, ghost_name,
+      id, user_id, source_id, ghost_id, ghost_ids, is_ghost, ghost_name,
       title, description, location, meeting_url, start_time, end_time, all_day, color, recurrence, repeat_days, created_at
     ) VALUES (
-      ?, ?, NULL, ?, ?, ?,
+      ?, ?, NULL, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?
     )
   `);
@@ -421,6 +421,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     color?: string;
     isGhost?: boolean;
     ghostId?: string;
+    ghostIds?: string[];
     ghostName?: string;
     location?: string;
     meetingUrl?: string;
@@ -428,11 +429,16 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     recurrence?: string;
     repeatDays?: number[];
   }) => {
+    const rawGhostIds = data.ghostIds || (data.ghostId ? [data.ghostId] : []);
+    const isGhost = Boolean(data.isGhost || rawGhostIds.length > 0);
+    const ghostId = rawGhostIds[0] || data.ghostId || null;
+
     insertEvent.run(
       data.id,
       userId,
-      data.ghostId || null,
-      data.isGhost ? 1 : 0,
+      ghostId,
+      JSON.stringify(rawGhostIds),
+      isGhost ? 1 : 0,
       data.ghostName || '',
       data.title,
       data.description || '',
@@ -440,7 +446,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
       data.meetingUrl || '',
       data.start,
       data.end,
-      data.color || (data.isGhost ? '#ec4899' : '#0ea5e9'),
+      data.color || (isGhost ? '#ec4899' : '#0ea5e9'),
       data.recurrence || 'none',
       JSON.stringify(data.repeatDays || []),
       now
@@ -453,7 +459,10 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     title: 'School Run (🚗 Kids)',
     start: `${today}T08:00:00.000Z`,
     end: `${today}T08:30:00.000Z`,
-    color: '#a855f7',
+    color: '#3b82f6',
+    isGhost: true,
+    ghostIds: ['ghost_sam', 'ghost_taylor', 'ghost_jordan'],
+    ghostName: 'Sam, Taylor, Jordan',
     location: 'School',
     description: 'Drop off children at school (08:30–13:30 schedule).',
     recurrence: 'weekdays',
@@ -540,7 +549,10 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     title: 'School Run (🚗 Kids)',
     start: `${tomorrow}T08:00:00.000Z`,
     end: `${tomorrow}T08:30:00.000Z`,
-    color: '#a855f7',
+    color: '#3b82f6',
+    isGhost: true,
+    ghostIds: ['ghost_sam', 'ghost_taylor', 'ghost_jordan'],
+    ghostName: 'Sam, Taylor, Jordan',
     location: 'School',
   });
 

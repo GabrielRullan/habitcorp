@@ -1,17 +1,70 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Warm parchment / cream neutrals aligned with the Goblin icon background */
+  --color-stone-50: #fbf9f4;
+  --color-stone-100: #f3efe6;
+  --color-stone-200: #e5dfd2;
+  --color-stone-300: #d2c9b8;
+
+  /* Vintage Navy-Indigo aligned with the Goblin's striped headband tie */
+  --color-indigo-50: #f2f3f8;
+  --color-indigo-100: #e3e5f1;
+  --color-indigo-200: #c8cce3;
+  --color-indigo-300: #a3a9cf;
+  --color-indigo-400: #7880b5;
+  --color-indigo-500: #555e96;
+  --color-indigo-600: #3f477a;
+  --color-indigo-700: #313863;
+  --color-indigo-800: #252b4d;
+  --color-indigo-900: #1b203b;
+  --color-indigo-950: #111426;
+
+  /* Goblin Emerald & Forest Green aligned with the character's skin & hair */
+  --color-emerald-50: #eefbf3;
+  --color-emerald-100: #d5f5e2;
+  --color-emerald-200: #aeeac8;
+  --color-emerald-300: #77d8a4;
+  --color-emerald-400: #3ec07b;
+  --color-emerald-500: #22a861;
+  --color-emerald-600: #18874c;
+  --color-emerald-700: #156b3e;
+  --color-emerald-800: #145533;
+  --color-emerald-900: #11462b;
+  --color-emerald-950: #092718;
+
+  /* Warm Tie-Gold & Briefcase Brass accents */
+  --color-amber-50: #fdf9ed;
+  --color-amber-100: #f9efd0;
+  --color-amber-200: #f2dca0;
+  --color-amber-300: #e9c368;
+  --color-amber-400: #dfb043;
+  --color-amber-500: #c89428;
+  --color-amber-600: #a4721d;
+  --color-amber-700: #835619;
+  --color-amber-800: #6d451b;
+  --color-amber-900: #5b3a1a;
+}
+
 @layer base {
   body {
-    @apply bg-stone-50 text-stone-800 antialiased selection:bg-indigo-100 selection:text-indigo-900;
+    @apply bg-stone-50 text-stone-800 dark:bg-stone-950 dark:text-stone-100 antialiased selection:bg-emerald-100 selection:text-emerald-900 dark:selection:bg-emerald-900 dark:selection:text-emerald-100;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
 }
 
-/* Native date and time picker widgets in light theme with clear cursor */
+/* Native date and time picker widgets with dark mode auto-switching */
 input[type="date"],
 input[type="time"] {
   cursor: pointer;
   color-scheme: light;
+}
+
+.dark input[type="date"],
+.dark input[type="time"] {
+  color-scheme: dark;
 }
 
 input[type="date"]::-webkit-calendar-picker-indicator,
@@ -29,7 +82,12 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   background-color: rgba(0, 0, 0, 0.05);
 }
 
-/* Custom scrollbar styling in pastel stone */
+.dark input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.dark input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Custom scrollbar styling in pastel stone and dark stone */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -43,6 +101,16 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(168, 162, 158, 0.9);
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgba(28, 25, 23, 0.8);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(87, 83, 78, 0.8);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 113, 108, 0.9);
 }
 
 /* Hide scrollbar for clean chip/strip navigation */

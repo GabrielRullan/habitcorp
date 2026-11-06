@@ -135,7 +135,10 @@ describe('WFH User Stories & Routine Verification Suite', () => {
       const t2 = await postTask({ title: 'Workday Focus', type: 'habit', time_of_day: 'workday' });
 
       await scoreTask(t1.body.id, 'up');
-      runUserRollover(user.id, '2026-10-29');
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+      runUserRollover(user.id, tomorrowStr);
 
       const res1 = await getTask(t1.body.id);
       expect(res1.body.time_of_day).toBe('morning');
@@ -332,10 +335,14 @@ describe('WFH User Stories & Routine Verification Suite', () => {
       expect(scoreRes.body.streak).toBe(1);
       expect(scoreRes.body.subtasks.every((s: any) => s.completed === 1)).toBe(true);
 
-      const tomorrowTask = await postTask({ title: 'Deploy v2 Cluster', type: 'todo', scheduled_date: '2026-10-29' });
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
+      const tomorrowTask = await postTask({ title: 'Deploy v2 Cluster', type: 'todo', scheduled_date: tomorrowStr });
       expect(tomorrowTask.status).toBe(201);
 
-      runUserRollover(user.id, '2026-10-29');
+      runUserRollover(user.id, tomorrowStr);
 
       const afterRollover = await getTask(shutdown.body.id);
       expect(afterRollover.body.completed).toBe(0);
