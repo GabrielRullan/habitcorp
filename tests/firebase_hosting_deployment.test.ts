@@ -3,7 +3,17 @@ import fs from 'fs';
 import path from 'path';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+import { DatabaseSync } from 'node:sqlite';
 import { fetchJson } from '../src/client/apiHelper';
+import {
+  STORAGE_KEY,
+  LEGACY_STORAGE_KEYS,
+  getClientDb,
+  runClientRollover,
+  handleClientStorageRequest,
+} from '../src/client/clientStore';
+import { initSchema } from '../src/server/db';
+import { seedDefaultRoutines } from '../src/server/seedRoutines';
 import { I18nProvider } from '../src/client/i18n/I18nContext';
 import { App } from '../src/client/App';
 import { TaskModal } from '../src/client/components/TaskModal';
@@ -48,13 +58,15 @@ describe('Firebase Hosting & habits.balears.tech Deployment Verification', () =>
       const mergeYml = fs.readFileSync(mergeWorkflowPath, 'utf8');
       const prYml = fs.readFileSync(prWorkflowPath, 'utf8');
 
-      expect(mergeYml).toContain('npm ci && npm run build');
+      expect(mergeYml).toContain('npm ci');
+      expect(mergeYml).toContain('npm run build');
       expect(mergeYml).toContain('FirebaseExtended/action-hosting-deploy@v0');
       expect(mergeYml).toContain('FIREBASE_SERVICE_ACCOUNT_HABITCORP_APP');
       expect(mergeYml).toContain('channelId: live');
       expect(mergeYml).toContain('projectId: habitcorp-app');
 
-      expect(prYml).toContain('npm ci && npm run build');
+      expect(prYml).toContain('npm ci');
+      expect(prYml).toContain('npm run build');
       expect(prYml).toContain('FirebaseExtended/action-hosting-deploy@v0');
       expect(prYml).toContain('FIREBASE_SERVICE_ACCOUNT_HABITCORP_APP');
       expect(prYml).toContain('projectId: habitcorp-app');
@@ -196,4 +208,89 @@ describe('Firebase Hosting & habits.balears.tech Deployment Verification', () =>
       }, 15000);
     }
   });
+
+  describe('4. Data Persistence & Anti-Wipe Guardrails', () => {
+    it('migrates custom user data from legacy localStorage keys without data loss', async () => {
+      const store = new Map<string, string>();
+      vi.stubGlobal('localStorage', {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => store.set(k, v),
+        removeItem: (k: string) => store.delete(k),
+        clear: () => store.clear(),
+      });
+
+      const legacyTask = {
+        id: 'task_user_custom_1',
+        user_id: 'user_gabriel',
+        project_id: 'proj_user_custom_1',
+        type: 'todo',
+        title: 'My Custom Important Task',
+        completed: 0,
+      };
+      const legacyProject = {
+        id: 'proj_user_custom_1',
+        user_id: 'user_gabriel',
+        name: 'Custom Project',
+        color: '#10b981',
+        icon: 'folder',
+        created_at: '2026-11-01T00:00:00.000Z',
+      };
+
+      // Simulate user data saved under legacy key habitcorp_client_db_v1
+      expect(LEGACY_STORAGE_KEYS).toContain('habitcorp_client_db_v1');
+      store.set(
+        'habitcorp_client_db_v1',
+        JSON.stringify({
+          projects: [legacyProject],
+          tasks: [legacyTask],
+          meetings: [],
+          ghosts: [],
+          calendars: [],
+        })
+      );
+
+      // Reading getClientDb() must migrate the legacy data into STORAGE_KEY rather than wiping it
+      const db = getClientDb();
+      expect(db.tasks.some((t) => t.id === 'task_user_custom_1')).toBe(true);
+      expect(db.projects.some((p) => p.id === 'proj_user_custom_1')).toBe(true);
+      expect(store.get(STORAGE_KEY)).toBeTruthy();
+
+      // Default user API calls must return the migrated task and project
+      const tasksRes = await handleClientStorageRequest('/api/v1/tasks', { method: 'GET' });
+      expect(tasksRes.tasks.some((t: any) => t.id === 'task_user_custom_1')).toBe(true);
+
+      // Daily rollover must never delete custom user tasks
+      runClientRollover(db, 'user_gabriel', '2026-11-08');
+      const afterRollover = await handleClientStorageRequest('/api/v1/tasks', { method: 'GET' });
+      expect(afterRollover.tasks.some((t: any) => t.id === 'task_user_custom_1')).toBe(true);
+    });
+
+    it('forbids destructive DELETE FROM wipes in seedRoutines.ts and removes clean_gabriel.js', () => {
+      const cleanScriptPath = path.join(ROOT_DIR, 'scripts', 'clean_gabriel.js');
+      expect(fs.existsSync(cleanScriptPath)).toBe(false);
+
+      const seedSource = fs.readFileSync(path.join(ROOT_DIR, 'src', 'server', 'seedRoutines.ts'), 'utf8');
+      expect(seedSource).not.toMatch(/DELETE\s+FROM\s+(tasks|subtasks|projects|ghosts|calendar_events)/i);
+
+      // Verify empirically on an in-memory SQLite database that seedDefaultRoutines preserves existing user records
+      const memDb = new DatabaseSync(':memory:');
+      initSchema(memDb);
+
+      memDb
+        .prepare(
+          `INSERT INTO tasks (id, user_id, type, title, created_at, updated_at)
+           VALUES ('custom_keep_me', 'user_test_default', 'todo', 'Must Never Be Deleted', '2026-11-07T00:00:00Z', '2026-11-07T00:00:00Z')`
+        )
+        .run();
+
+      seedDefaultRoutines(memDb, 'user_test_default');
+
+      const preserved = memDb
+        .prepare(`SELECT id, title FROM tasks WHERE id = 'custom_keep_me'`)
+        .get() as { id: string; title: string } | undefined;
+      expect(preserved).toBeDefined();
+      expect(preserved?.title).toBe('Must Never Be Deleted');
+    });
+  });
 });
+

@@ -2,12 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
 
 export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_test_default') {
-  // Clear existing items for clean seeding
-  db.prepare('DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = ?)').run(userId);
-  db.prepare('DELETE FROM tasks WHERE user_id = ?').run(userId);
-  db.prepare('DELETE FROM calendar_events WHERE user_id = ?').run(userId);
-  db.prepare('DELETE FROM ghosts WHERE user_id = ?').run(userId);
-  db.prepare('DELETE FROM projects WHERE user_id = ?').run(userId);
+  // IMPORTANT: Seeding must be strictly non-destructive (INSERT OR IGNORE).
+  // Never run DELETE FROM on existing user tables during seeding.
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -30,7 +26,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
   ];
 
   const insertProj = db.prepare(`
-    INSERT INTO projects (id, user_id, name, color, icon, created_at)
+    INSERT OR IGNORE INTO projects (id, user_id, name, color, icon, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
   for (const p of projects) {
@@ -46,7 +42,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
   ];
 
   const insertGhost = db.prepare(`
-    INSERT INTO ghosts (id, user_id, name, relation, color, created_at)
+    INSERT OR IGNORE INTO ghosts (id, user_id, name, relation, color, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
   for (const g of ghosts) {
@@ -55,7 +51,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
 
   // Helper to insert task + subtasks
   const insertTaskStmt = db.prepare(`
-    INSERT INTO tasks (
+    INSERT OR IGNORE INTO tasks (
       id, user_id, project_id, type, time_of_day, title, notes, difficulty, difficulty_weight, tags,
       habit_positive, habit_negative, counter_up, counter_down, habit_reset_period,
       frequency, repeat_interval, repeat_days, streak, best_streak, completed,
@@ -71,7 +67,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
   `);
 
   const insertSubStmt = db.prepare(`
-    INSERT INTO subtasks (id, task_id, title, completed, position)
+    INSERT OR IGNORE INTO subtasks (id, task_id, title, completed, position)
     VALUES (?, ?, ?, 0, ?)
   `);
 
@@ -95,9 +91,10 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
     schedDate?: string;
     schedStart?: string;
     schedDuration?: number;
+    microHabitTitle?: string;
     subtasks?: string[];
   }) => {
-    insertTaskStmt.run(
+    const res = insertTaskStmt.run(
       data.id,
       userId,
       data.projectId || null,
@@ -124,7 +121,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
       now
     );
 
-    if (data.subtasks && data.subtasks.length > 0) {
+    if (res.changes > 0 && data.subtasks && data.subtasks.length > 0) {
       data.subtasks.forEach((st, idx) => {
         insertSubStmt.run(crypto.randomUUID(), data.id, st, idx);
       });
@@ -426,7 +423,7 @@ export function seedDefaultRoutines(db: DatabaseSync, userId: string = 'user_tes
 
   // 5. CALENDAR MEETINGS & FIXED ANCHORS
   const insertEvent = db.prepare(`
-    INSERT INTO calendar_events (
+    INSERT OR IGNORE INTO calendar_events (
       id, user_id, source_id, ghost_id, ghost_ids, is_ghost, ghost_name,
       title, description, location, meeting_url, start_time, end_time, all_day, color, recurrence, repeat_days, created_at
     ) VALUES (

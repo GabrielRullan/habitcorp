@@ -31,7 +31,14 @@ interface StoredData {
   }>;
 }
 
-const STORAGE_KEY = 'habitcorp_client_db_v4';
+// IMPORTANT: Do NOT bump or rename STORAGE_KEY without keeping old keys in LEGACY_STORAGE_KEYS.
+// Changing STORAGE_KEY without migration orphans user data in browser localStorage.
+export const STORAGE_KEY = 'habitcorp_client_db_v4';
+export const LEGACY_STORAGE_KEYS = [
+  'habitcorp_client_db_v3',
+  'habitcorp_client_db_v2',
+  'habitcorp_client_db_v1',
+];
 
 function getDefaultSeedData(): StoredData {
   const today = new Date().toISOString().slice(0, 10);
@@ -573,25 +580,86 @@ function getDefaultSeedData(): StoredData {
   };
 }
 
+function normalizeStoredData(data: Partial<StoredData>, seed: StoredData): StoredData {
+  const normalized: StoredData = {
+    users: Array.isArray(data.users) ? [...data.users] : [],
+    projects: Array.isArray(data.projects) ? [...data.projects] : [],
+    tasks: Array.isArray(data.tasks) ? [...data.tasks] : [],
+    subtasks: Array.isArray(data.subtasks) ? [...data.subtasks] : [],
+    meetings: Array.isArray(data.meetings) ? [...data.meetings] : [],
+    ghosts: Array.isArray(data.ghosts) ? [...data.ghosts] : [],
+    calendars: Array.isArray(data.calendars) ? [...data.calendars] : [],
+    magicLinks: Array.isArray(data.magicLinks) ? [...data.magicLinks] : [],
+  };
+
+  for (const seedUser of seed.users) {
+    if (!normalized.users.some((u) => u.id === seedUser.id || u.username === seedUser.username)) {
+      normalized.users.push(seedUser);
+    }
+  }
+
+  return normalized;
+}
+
+function mergeLegacyData(target: StoredData, legacy: Partial<StoredData>): boolean {
+  let changed = false;
+  const mergeById = <T extends { id: string }>(targetArr: T[], sourceArr?: T[]) => {
+    if (!Array.isArray(sourceArr)) return;
+    for (const item of sourceArr) {
+      if (item && item.id && !targetArr.some((existing) => existing.id === item.id)) {
+        targetArr.push(item);
+        changed = true;
+      }
+    }
+  };
+
+  mergeById(target.projects, legacy.projects);
+  mergeById(target.tasks, legacy.tasks);
+  mergeById(target.subtasks!, legacy.subtasks);
+  mergeById(target.meetings, legacy.meetings);
+  mergeById(target.ghosts, legacy.ghosts);
+  mergeById(target.calendars, legacy.calendars);
+
+  return changed;
+}
+
 export function getClientDb(): StoredData {
+  const seed = getDefaultSeedData();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
+    let current: StoredData;
+    let shouldSave = false;
+
     if (!raw) {
-      const initial = getDefaultSeedData();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-      return initial;
+      current = seed;
+      shouldSave = true;
+    } else {
+      current = normalizeStoredData(JSON.parse(raw), seed);
     }
-    const parsed = JSON.parse(raw);
-    if (!parsed.calendars) parsed.calendars = [];
-    if (!parsed.ghosts) parsed.ghosts = [];
-    if (!parsed.meetings) parsed.meetings = [];
-    if (!parsed.tasks) parsed.tasks = [];
-    if (!parsed.subtasks) parsed.subtasks = [];
-    if (!parsed.projects) parsed.projects = [];
-    if (!parsed.users) parsed.users = [];
-    return parsed;
+
+    // Non-destructively migrate any records from legacy localStorage keys
+    for (const legacyKey of LEGACY_STORAGE_KEYS) {
+      const legacyRaw = localStorage.getItem(legacyKey);
+      if (legacyRaw) {
+        try {
+          const legacyParsed = JSON.parse(legacyRaw);
+          if (!raw) {
+            // If primary key was empty, adopt the legacy store directly rather than wiping with seed
+            current = normalizeStoredData(legacyParsed, seed);
+            shouldSave = true;
+          } else if (mergeLegacyData(current, legacyParsed)) {
+            shouldSave = true;
+          }
+        } catch {}
+      }
+    }
+
+    if (shouldSave) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+    }
+    return current;
   } catch {
-    return getDefaultSeedData();
+    return seed;
   }
 }
 
