@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Task, TaskType, DifficultyTier, HabitResetPeriod, DailyFrequency, Project, TimeOfDay } from '../types';
 import { DIFFICULTY_LIST, DIFFICULTY_CONFIGS } from '../utils/difficulty';
 import { useTranslation } from '../i18n/I18nContext';

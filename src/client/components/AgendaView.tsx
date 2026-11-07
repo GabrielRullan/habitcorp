@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Task, CalendarMeeting, Ghost, Project } from '../types';
 import { DIFFICULTY_CONFIGS } from '../utils/difficulty';
 import { useTranslation } from '../i18n/I18nContext';
