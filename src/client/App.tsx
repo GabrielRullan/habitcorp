@@ -2380,11 +2380,11 @@ export const App: React.FC = () => {
                 setModalDueDate(todayStr);
                 setTaskModalOpen(true);
               }}
-              className="px-2 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition flex items-center gap-1"
+              className="px-2 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition flex items-center gap-1 whitespace-nowrap shrink-0"
               title="Add task specifically scheduled for today"
             >
-              <Plus className="w-3 h-3" />
-              <span>{t.plusTodayBtn}</span>
+              <Plus className="w-3 h-3 shrink-0" />
+              <span>{t.taskBtnToday}</span>
             </button>
           </div>
         </div>
