@@ -19,6 +19,7 @@ import {
   getGeminiApiKey,
   setGeminiApiKey,
 } from '../services/goblinBrain';
+import { isTaskEligibleToday } from '../utils/flowPrompt';
 
 interface GoblinBrainModalProps {
   isOpen: boolean;
@@ -47,7 +48,7 @@ export const GoblinBrainModal: React.FC<GoblinBrainModalProps> = ({
   const [savedKeySuccess, setSavedKeySuccess] = useState(false);
   const [applying, setApplying] = useState(false);
 
-  const pendingTasks = tasks.filter((t) => !t.completed);
+  const pendingTasks = tasks.filter((t) => !t.completed && isTaskEligibleToday(t));
 
   useEffect(() => {
     if (!isOpen) return;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Task, DifficultyTier, TaskType } from '../types';
 import { QuickTaskBar } from './QuickTaskBar';
+import { isTaskEligibleToday } from '../utils/flowPrompt';
 import {
   Sun,
   Sunset,
@@ -38,7 +39,9 @@ export const CoachingFlowVision: React.FC<CoachingFlowVisionProps> = ({
   const [reflectionSaved, setReflectionSaved] = useState(false);
   const [mood, setMood] = useState<'great' | 'okay' | 'tired'>('okay');
 
-  const habitsAndDailies = tasks.filter((t) => t.type === 'habit' || t.type === 'daily');
+  const habitsAndDailies = tasks.filter(
+    (t) => t.type === 'habit' || (t.type === 'daily' && isTaskEligibleToday(t))
+  );
   const completedTodayCount = tasks.filter((t) => t.completed || (t.counter_up && t.counter_up > 0)).length;
 
   // Split into circadian routine flows

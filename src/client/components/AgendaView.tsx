@@ -4,6 +4,7 @@ import { DIFFICULTY_CONFIGS } from '../utils/difficulty';
 import { useTranslation } from '../i18n/I18nContext';
 import { StreakGrowthBadge } from './StreakGrowthBadge';
 import { isTaskInGracePeriod } from '../utils/streak';
+import { isDailyDueOnDate } from '../clientStore';
 import {
   resolveTaskProject,
   getProjectCardStyle,
@@ -376,22 +377,31 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const weekDays = getWeekDays(selectedDate);
   const activeDates = viewMode === 'day' ? [selectedDate] : weekDays;
 
-  // Unscheduled tasks & recurring habits/routines (recurring habits eligible every day)
+  const isSelectedToday = selectedDate === new Date().toISOString().slice(0, 10);
+
+  // Unscheduled tasks & recurring habits/routines (routines filtered to those due on selectedDate)
   const unscheduledTasks = tasks.filter((t) => {
     if (t.scheduled_date && t.scheduled_date === selectedDate) return false;
     if (t.type === 'habit') return true;
-    if (t.type === 'daily' || t.type === 'todo') return !t.completed && (!t.scheduled_date || t.scheduled_date !== selectedDate);
+    if (t.type === 'daily') {
+      if (t.completed) return false;
+      if (isSelectedToday && t.is_due_today === false) return false;
+      return isDailyDueOnDate(t, selectedDate);
+    }
+    if (t.type === 'todo') return !t.completed && (!t.scheduled_date || t.scheduled_date !== selectedDate);
     return false;
   });
 
-  const isSelectedToday = selectedDate === new Date().toISOString().slice(0, 10);
-
-  // Tasks and habits eligible for today's quick placement
+  // Tasks and habits eligible for selectedDate's quick placement
   const tasksForSelectedDate = tasks.filter((t) => {
     if (t.scheduled_date && t.scheduled_date === selectedDate) return false;
     if (selectedProjectId && selectedProjectId !== 'all' && t.project_id !== selectedProjectId) return false;
     if (t.type === 'habit') return isSelectedToday;
     if (t.completed) return false;
+    if (t.type === 'daily') {
+      if (isSelectedToday && t.is_due_today === false) return false;
+      return isDailyDueOnDate(t, selectedDate);
+    }
     return (
       t.due_date?.slice(0, 10) === selectedDate ||
       (t.is_due_today && isSelectedToday)

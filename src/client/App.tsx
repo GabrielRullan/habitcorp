@@ -74,7 +74,7 @@ import { CelebrationOverlay } from './components/CelebrationOverlay';
 import { playPeacefulChime } from './utils/celebration';
 import { isTaskInGracePeriod, getStreakGraceMessage } from './utils/streak';
 import { findNextAvailableSlot, getSpoonCalibratedDuration } from './utils/smartScheduling';
-import { getNextFlowTask } from './utils/flowPrompt';
+import { getNextFlowTask, isTaskEligibleToday } from './utils/flowPrompt';
 import { isTaskStale, getStaleTasks, getStaleTriageMessage } from './utils/backlogTriage';
 import { DailyShutdownModal } from './components/DailyShutdownModal';
 
@@ -99,8 +99,9 @@ export const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('tasks_agenda');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // Column Sub-Tabs & Time-of-Day Filter
-  const [habitTab, setHabitTab] = useState<'all' | 'due_today'>('all');
+  // Column Sub-Tabs & Time-of-Day Filter (default Dailies to due_today so non-due routines don't clutter today's pending list)
+  const [habitTab, setHabitTab] = useState<'all' | 'due_today'>('due_today');
+  const [showOtherDaysDailies, setShowOtherDaysDailies] = useState(false);
   const [habitTimeFilter, setHabitTimeFilter] = useState<'all' | 'morning' | 'workday' | 'evening' | 'anytime'>('all');
   const [taskTab, setTaskTab] = useState<'all' | 'todo' | 'without_timeline'>('all');
   const [mobileHabitsTasksTab, setMobileHabitsTasksTab] = useState<'habits' | 'dailies' | 'tasks'>('habits');
@@ -716,7 +717,7 @@ export const App: React.FC = () => {
 
         // ADHD Flow Bridge: Find the optimal next task to recommend
         if (target) {
-          const nextTask = getNextFlowTask(target, tasks);
+          const nextTask = getNextFlowTask(target, tasks, todayStr);
           if (nextTask) {
             setNextFlowPrompt({ completedTitle: target.title, nextTask });
             if (flowPromptTimeoutRef.current) clearTimeout(flowPromptTimeoutRef.current);
@@ -1407,10 +1408,20 @@ export const App: React.FC = () => {
     return filteredTasks.filter((t) => {
       if (zenMode && Boolean(t.completed)) return false;
       if (t.type !== 'habit' && t.type !== 'daily') return false;
-      if (habitTab === 'due_today') return t.is_due_today;
+      if (habitTab === 'due_today') return isTaskEligibleToday(t, todayStr);
       return true;
     });
-  }, [filteredTasks, habitTab, zenMode]);
+  }, [filteredTasks, habitTab, zenMode, todayStr]);
+
+  // Routines scheduled for other days of the week (tucked into collapsible footer when habitTab === 'due_today')
+  const otherDaysDailies = useMemo(() => {
+    return filteredTasks.filter((t) => {
+      if (zenMode && Boolean(t.completed)) return false;
+      if (t.type !== 'daily') return false;
+      if (habitTimeFilter !== 'all' && (t.time_of_day || 'anytime') !== habitTimeFilter) return false;
+      return !isTaskEligibleToday(t, todayStr);
+    });
+  }, [filteredTasks, zenMode, habitTimeFilter, todayStr]);
 
   // Derived 1A. Pure Habits (+/-)
   const pureHabitsList = useMemo(() => {
@@ -1543,13 +1554,49 @@ export const App: React.FC = () => {
   }, [tasks, todayStr]);
 
   const todayPendingTasks = useMemo(() => {
-    return tasks.filter((t) => !t.completed && (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr || t.is_due_today));
+    return tasks.filter(
+      (t) =>
+        !t.completed &&
+        isTaskEligibleToday(t, todayStr) &&
+        (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr || t.is_due_today)
+    );
   }, [tasks, todayStr]);
+
+  // Helper to format a routine's recurrence schedule into human-readable weekday labels (e.g. "Ma, Vi")
+  function getRoutineScheduleLabel(habit: Task): string {
+    if (habit.type !== 'daily') return 'Flexible habit';
+    if (!habit.frequency || habit.frequency === 'daily') {
+      return t.periodEveryDay || 'Daily';
+    }
+    if (habit.frequency === 'weekly') {
+      let days: number[] = [];
+      try {
+        days = Array.isArray(habit.repeat_days)
+          ? habit.repeat_days
+          : JSON.parse((habit.repeat_days as any) || '[]');
+      } catch {
+        days = [];
+      }
+      if (days.length === 7 || days.length === 0) return t.periodEveryDay || 'Daily';
+      if (days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d))) {
+        return t.periodWeekdays || 'Weekdays';
+      }
+      const shortMap = t.weekdaysShort || [];
+      const fallbackShort = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+      return days
+        .map((d) => shortMap.find((w) => w.value === d)?.label || fallbackShort[d] || String(d))
+        .join(', ');
+    }
+    return habit.frequency;
+  }
 
   // ================= HABIT / DAILY CARD RENDERER =================
   function renderHabitCard(habit: Task) {
       const isDone = Boolean(habit.completed);
       if (zenMode && isDone) return null;
+      const isDueToday = isTaskEligibleToday(habit, todayStr);
+      const isRestDay = habit.type === 'daily' && !isDueToday && !isDone;
+      const scheduleLabel = getRoutineScheduleLabel(habit);
       const tod = (habit.time_of_day || 'anytime') as 'morning' | 'workday' | 'evening' | 'anytime';
       const inGrace = isTaskInGracePeriod(habit, todayStr);
       const todayAction = tasks.find(
@@ -1575,6 +1622,8 @@ export const App: React.FC = () => {
             className={`px-3 py-2 rounded-xl border transition shadow-2xs flex items-center justify-between gap-2.5 cursor-pointer select-none ${
               isDone
                 ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-60'
+                : isRestDay
+                ? 'bg-stone-50/60 dark:bg-stone-800/40 border-dashed border-stone-200 dark:border-stone-700 text-stone-500 opacity-70'
                 : 'bg-white dark:bg-stone-800 border-stone-200/90 dark:border-stone-700/80 hover:border-indigo-300'
             }`}
           >
@@ -1599,6 +1648,11 @@ export const App: React.FC = () => {
               <span className={`text-xs font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>
                 {habit.title}
               </span>
+              {habit.type === 'daily' && habit.frequency === 'weekly' && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-medium shrink-0">
+                  📅 {scheduleLabel}
+                </span>
+              )}
               {habit.streak > 0 && habit.type === 'daily' && (
                 <span className="text-[10px] text-amber-600 font-mono flex items-center gap-0.5 shrink-0">
                   <Flame className="w-3 h-3 text-amber-500" />
@@ -1646,7 +1700,7 @@ export const App: React.FC = () => {
                     {t.habitActionActive || '⚡ Tasca activa'}
                   </span>
                 )
-              ) : (
+              ) : !isRestDay ? (
                 <button
                   type="button"
                   onClick={() => handleConvertHabitToTodayTask(habit)}
@@ -1656,7 +1710,7 @@ export const App: React.FC = () => {
                   <ListPlus className="w-2.5 h-2.5" />
                   <span>{t.convertHabitToTodayTask || 'Tasca avui'}</span>
                 </button>
-              )}
+              ) : null}
               <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
                 {habit.difficulty === 'trivial' ? 'XS' : habit.difficulty === 'easy' ? 'S' : habit.difficulty === 'medium' ? 'M' : 'L'}
               </span>
@@ -1677,6 +1731,8 @@ export const App: React.FC = () => {
           className={`p-3 rounded-xl border transition shadow-2xs cursor-grab active:cursor-grabbing ${
             isDone
               ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-70'
+              : isRestDay
+              ? 'bg-stone-50/60 border-dashed border-stone-200/90 text-stone-500 opacity-75'
               : 'bg-white border-stone-200/90 hover:border-stone-300'
           }`}
         >
@@ -1833,8 +1889,8 @@ export const App: React.FC = () => {
                   </div>
                 )}
                 <span>•</span>
-                <span className="capitalize text-stone-500">
-                  {habit.type === 'daily' ? habit.frequency : 'Flexible habit'}
+                <span className="text-stone-500 font-medium">
+                  {habit.type === 'daily' ? `📅 ${scheduleLabel}` : 'Flexible habit'}
                 </span>
               </div>
             </div>
@@ -1925,7 +1981,7 @@ export const App: React.FC = () => {
                     {t.habitActionActive || '⚡ Tasca activa'}
                   </span>
                 )
-              ) : (
+              ) : !isRestDay ? (
                 <button
                   type="button"
                   onClick={() => handleConvertHabitToTodayTask(habit)}
@@ -1935,7 +1991,7 @@ export const App: React.FC = () => {
                   <ListPlus className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
                   <span>{t.convertHabitToTodayTask || 'Tasca avui'}</span>
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -2188,6 +2244,35 @@ export const App: React.FC = () => {
                 </div>
               ) : (
                 filteredDailiesList.map(renderHabitCard)
+              )}
+            </div>
+          )}
+
+          {/* Collapsible Footer for Routines Scheduled on Other Days of the Week */}
+          {habitTab === 'due_today' && otherDaysDailies.length > 0 && (
+            <div className="pt-2 border-t border-dashed border-stone-200 dark:border-stone-700/80">
+              <button
+                type="button"
+                onClick={() => setShowOtherDaysDailies((prev) => !prev)}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-[11px] font-medium text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200/50 dark:hover:bg-stone-800/60 transition cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5 text-stone-400" />
+                  <span>
+                    {t.periodSpecificDays || 'Other days'} ({otherDaysDailies.length})
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform ${
+                    showOtherDaysDailies || Boolean(searchQuery.trim()) ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {(showOtherDaysDailies || Boolean(searchQuery.trim())) && (
+                <div className="mt-2 space-y-2 pl-1">
+                  {otherDaysDailies.map(renderHabitCard)}
+                </div>
               )}
             </div>
           )}

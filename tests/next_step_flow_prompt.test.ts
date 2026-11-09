@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getNextFlowTask } from '../src/client/utils/flowPrompt';
+import { getNextFlowTask, isTaskEligibleToday } from '../src/client/utils/flowPrompt';
 import { Task } from '../src/client/types';
 
 describe('Next Step Flow Prompt Utility', () => {
@@ -96,5 +96,30 @@ describe('Next Step Flow Prompt Utility', () => {
     const completed = { ...baseTask, completed: 1 };
     const next = getNextFlowTask(completed, [completed]);
     expect(next).toBeNull();
+  });
+
+  it('never offers a weekday-specific routine (e.g. Correr on Tue/Fri) as pending on a non-due day (Monday)', () => {
+    const mondayStr = '2026-11-09'; // Monday (dayOfWeek = 1)
+    const correrRoutine: Task = {
+      ...baseTask,
+      id: 'routine_correr',
+      title: 'Correr',
+      type: 'daily',
+      frequency: 'weekly',
+      repeat_days: [2, 5], // Tuesday (2) and Friday (5)
+      is_due_today: false,
+      completed: 0,
+    };
+
+    expect(isTaskEligibleToday(correrRoutine, mondayStr)).toBe(false);
+    expect(getNextFlowTask(baseTask, [baseTask, correrRoutine], mondayStr)).toBeNull();
+
+    // On Tuesday (2026-11-10), it IS due and eligible
+    const tuesdayRoutine: Task = {
+      ...correrRoutine,
+      is_due_today: true,
+    };
+    expect(isTaskEligibleToday(tuesdayRoutine, '2026-11-10')).toBe(true);
+    expect(getNextFlowTask(baseTask, [baseTask, tuesdayRoutine], '2026-11-10')?.id).toBe('routine_correr');
   });
 });

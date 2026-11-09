@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { TimeTimerDisk } from './TimeTimerDisk';
 import { useTranslation } from '../i18n/I18nContext';
+import { isTaskEligibleToday } from '../utils/flowPrompt';
 
 interface SpotlightModalProps {
   isOpen: boolean;
@@ -32,7 +33,12 @@ export const SpotlightModal: React.FC<SpotlightModalProps> = ({
   onOpenGoblinBrain,
 }) => {
   const { t } = useTranslation();
-  const pendingTasks = tasks.filter((t) => !t.completed && t.type !== 'habit');
+  const pendingTasks = tasks.filter(
+    (t) =>
+      !t.completed &&
+      t.type !== 'habit' &&
+      (t.id === initialTaskId || isTaskEligibleToday(t))
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completing, setCompleting] = useState(false);
   const [showTimer, setShowTimer] = useState(false);
