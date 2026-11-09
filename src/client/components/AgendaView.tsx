@@ -417,7 +417,21 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
     return true;
   });
 
-  const totalGhostEvents = meetings.filter((m) => m.is_ghost).length;
+  const totalGhostEvents = activeDates.reduce((acc, dateStr) => {
+    const seenIds = new Set<string>();
+    const dayGhosts = meetings.filter((m) => {
+      if (!m.is_ghost) return false;
+      if (!doesMeetingOccurOnDate(m, dateStr)) return false;
+      if (selectedGhostId !== 'all') {
+        const gids = m.ghost_ids && m.ghost_ids.length > 0 ? m.ghost_ids : m.ghost_id ? [m.ghost_id] : [];
+        if (!gids.includes(selectedGhostId)) return false;
+      }
+      if (seenIds.has(m.id)) return false;
+      seenIds.add(m.id);
+      return true;
+    });
+    return acc + dayGhosts.length;
+  }, 0);
 
   const getRoutineIcon = (tod?: string) => {
     switch (tod) {
