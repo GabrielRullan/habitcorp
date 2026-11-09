@@ -1547,6 +1547,1156 @@ export const App: React.FC = () => {
     return tasks.filter((t) => !t.completed && (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr || t.is_due_today));
   }, [tasks, todayStr]);
 
+  // ================= HABIT / DAILY CARD RENDERER =================
+  function renderHabitCard(habit: Task) {
+      const isDone = Boolean(habit.completed);
+      if (zenMode && isDone) return null;
+      const tod = (habit.time_of_day || 'anytime') as 'morning' | 'workday' | 'evening' | 'anytime';
+      const inGrace = isTaskInGracePeriod(habit, todayStr);
+      const todayAction = tasks.find(
+        (t) =>
+          t.habit_id === habit.id &&
+          (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr)
+      );
+
+      if (densityMode === 'compact') {
+        return (
+          <div
+            key={habit.id}
+            draggable={true}
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', habit.id);
+              setDraggedTaskId(habit.id);
+            }}
+            onDragEnd={() => setDraggedTaskId(null)}
+            onClick={() => {
+              setEditingTask(habit);
+              setTaskModalOpen(true);
+            }}
+            className={`px-3 py-2 rounded-xl border transition shadow-2xs flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+              isDone
+                ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-60'
+                : 'bg-white dark:bg-stone-800 border-stone-200/90 dark:border-stone-700/80 hover:border-indigo-300'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              {habit.type === 'daily' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleScoreTask(habit.id, 'up');
+                  }}
+                  className="text-stone-400 hover:text-emerald-600 shrink-0"
+                  title={isDone ? 'Mark incomplete' : 'Mark done for today'}
+                >
+                  {isDone ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : (
+                    <Circle className="w-4 h-4" />
+                  )}
+                </button>
+              )}
+              <span className={`text-xs font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>
+                {habit.title}
+              </span>
+              {habit.streak > 0 && habit.type === 'daily' && (
+                <span className="text-[10px] text-amber-600 font-mono flex items-center gap-0.5 shrink-0">
+                  <Flame className="w-3 h-3 text-amber-500" />
+                  {habit.streak}d
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+              {(Boolean(habit.habit_positive) || Boolean(habit.habit_negative)) && (
+                <div className="flex items-center gap-1">
+                  {Boolean(habit.habit_positive) && (
+                    <button
+                      type="button"
+                      onClick={() => handleScoreTask(habit.id, 'up')}
+                      className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded text-[10px] font-bold"
+                    >
+                      +{habit.counter_up || 0}
+                    </button>
+                  )}
+                  {Boolean(habit.habit_negative) && (
+                    <button
+                      type="button"
+                      onClick={() => handleScoreTask(habit.id, 'down')}
+                      className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded text-[10px] font-bold"
+                    >
+                      -{habit.counter_down || 0}
+                    </button>
+                  )}
+                </div>
+              )}
+              {todayAction ? (
+                todayAction.completed ? (
+                  <span
+                    className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 rounded text-[9px] font-semibold flex items-center gap-0.5"
+                    title={t.habitActionDone || '✓ Tasca feta'}
+                  >
+                    {t.habitActionDone || '✓ Tasca feta'}
+                  </span>
+                ) : (
+                  <span
+                    className="px-1.5 py-0.5 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 rounded text-[9px] font-semibold flex items-center gap-0.5"
+                    title={t.habitActionActive || '⚡ Tasca activa'}
+                  >
+                    {t.habitActionActive || '⚡ Tasca activa'}
+                  </span>
+                )
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleConvertHabitToTodayTask(habit)}
+                  className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/70 rounded text-[9px] font-semibold transition flex items-center gap-0.5"
+                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'avui per aquest hàbit"}
+                >
+                  <ListPlus className="w-2.5 h-2.5" />
+                  <span>{t.convertHabitToTodayTask || 'Tasca avui'}</span>
+                </button>
+              )}
+              <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
+                {habit.difficulty === 'trivial' ? 'XS' : habit.difficulty === 'easy' ? 'S' : habit.difficulty === 'medium' ? 'M' : 'L'}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div
+          key={habit.id}
+          draggable={true}
+          onDragStart={(e) => {
+            e.dataTransfer.setData('text/plain', habit.id);
+            setDraggedTaskId(habit.id);
+          }}
+          onDragEnd={() => setDraggedTaskId(null)}
+          className={`p-3 rounded-xl border transition shadow-2xs cursor-grab active:cursor-grabbing ${
+            isDone
+              ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-70'
+              : 'bg-white border-stone-200/90 hover:border-stone-300'
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            {/* Checkbox for Daily/Periodical */}
+            {habit.type === 'daily' && (
+              <button
+                onClick={() => handleScoreTask(habit.id, 'up')}
+                className="mt-0.5 text-stone-400 hover:text-emerald-600 shrink-0"
+                title={isDone ? 'Mark incomplete' : 'Mark done for today'}
+              >
+                {isDone ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <Circle className="w-4 h-4" />
+                )}
+              </button>
+            )}
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-1">
+                <span
+                  onClick={() => {
+                    setEditingTask(habit);
+                    setTaskModalOpen(true);
+                  }}
+                  className={`font-semibold text-xs cursor-pointer hover:text-indigo-600 truncate ${
+                    isDone ? 'line-through text-stone-400' : 'text-stone-800'
+                  }`}
+                >
+                  {habit.title}
+                </span>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Time-of-Day Pill */}
+                  <span
+                    className={`text-[9px] px-1.5 py-0.2 rounded font-medium border capitalize ${
+                      tod === 'morning'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : tod === 'workday'
+                        ? 'bg-blue-50 text-blue-800 border-blue-200'
+                        : tod === 'evening'
+                        ? 'bg-purple-50 text-purple-800 border-purple-200'
+                        : 'bg-stone-50 text-stone-600 border-stone-200'
+                    }`}
+                  >
+                    {tod}
+                  </span>
+
+                  {/* Pastel Difficulty Badge */}
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 ${
+                      habit.difficulty === 'hard'
+                        ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                        : habit.difficulty === 'medium'
+                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                        : habit.difficulty === 'trivial'
+                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    }`}
+                    title={
+                      habit.difficulty === 'trivial'
+                        ? 'XS (5–15m)'
+                        : habit.difficulty === 'medium'
+                        ? 'M (30–60m)'
+                        : habit.difficulty === 'hard'
+                        ? 'L (60m+)'
+                        : 'S (15–30m)'
+                    }
+                  >
+                    {habit.difficulty === 'trivial' ? 'XS' : habit.difficulty === 'easy' ? 'S' : habit.difficulty === 'medium' ? 'M' : 'L'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Project Tag */}
+              {habit.project_name && (
+                <div className="mt-1">
+                  <span
+                    className="px-1.5 py-0.2 rounded text-[9px] font-medium border"
+                    style={{
+                      backgroundColor: `${habit.project_color || '#6366f1'}15`,
+                      color: habit.project_color || '#6366f1',
+                      borderColor: `${habit.project_color || '#6366f1'}30`,
+                    }}
+                  >
+                    ● {habit.project_name}
+                  </span>
+                </div>
+              )}
+
+              {habit.notes && (
+                <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
+                  {habit.notes}
+                </p>
+              )}
+
+              {/* Habit Stacking Cue Pill */}
+              {habit.anchor_habit_title && (
+                <div className="mt-1 flex items-center gap-1 text-[10px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-800/60 font-medium">
+                  <span>🔗</span>
+                  <span>After: {habit.anchor_habit_title}</span>
+                </div>
+              )}
+
+              {/* Micro-Habit Starter Step Chip with 1-Tap Floor Completion */}
+              {habit.micro_habit_title && (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!isDone) {
+                      handleScoreTask(habit.id, 'up');
+                      setMindfulReflection('🌱 Starter step logged! You maintained your habit momentum on a low-spoon day.');
+                      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+                      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
+                    }
+                  }}
+                  className={`mt-1 inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md border font-medium transition cursor-pointer select-none ${
+                    isDone
+                      ? 'bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                      : 'bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700 active:scale-95'
+                  }`}
+                  title={isDone ? 'Starter step completed' : 'Tap to log starter step (< 30s floor habit)'}
+                >
+                  <span>🌱</span>
+                  <span className="font-semibold">Starter Step:</span>
+                  <span className={isDone ? 'line-through text-stone-500' : ''}>{habit.micro_habit_title}</span>
+                  {!isDone && (
+                    <span className="ml-1 text-[9px] bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.2 rounded font-bold shadow-2xs">
+                      Do Now
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Cadence info & Streak & Compassionate Grace Shield */}
+              <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[10px] text-stone-400">
+                {habit.type === 'daily' && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="flex items-center gap-0.5 text-amber-600 font-semibold font-mono">
+                      <Flame className="w-3 h-3 text-amber-500" />
+                      {habit.streak}d streak
+                    </span>
+                    <StreakGrowthBadge streak={habit.streak} size="xs" />
+                    {inGrace && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-sky-100 dark:bg-sky-950/70 border border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200"
+                        title={getStreakGraceMessage(habit.streak, true)}
+                      >
+                        <span>🛡️</span>
+                        <span>Shield Active</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+                <span>•</span>
+                <span className="capitalize text-stone-500">
+                  {habit.type === 'daily' ? habit.frequency : 'Flexible habit'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Optional +/- Counter Buttons */}
+          {(Boolean(habit.habit_positive) || Boolean(habit.habit_negative)) && (
+            <div className="flex items-center justify-between pt-2 mt-2 border-t border-stone-100">
+              <span className="text-[10px] text-stone-400 font-medium">Counters:</span>
+              <div className="flex items-center gap-1.5">
+                {Boolean(habit.habit_positive) && (
+                  <button
+                    onClick={() => handleScoreTask(habit.id, 'up')}
+                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-md text-xs font-bold transition flex items-center gap-1"
+                    title="Add +1"
+                  >
+                    <span>+</span>
+                    <span className="font-mono text-[10px]">{habit.counter_up}</span>
+                  </button>
+                )}
+                {Boolean(habit.habit_negative) && (
+                  <button
+                    onClick={() => handleScoreTask(habit.id, 'down')}
+                    className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-md text-xs font-bold transition flex items-center gap-1"
+                    title="Subtract -1"
+                  >
+                    <span>-</span>
+                    <span className="font-mono text-[10px]">{habit.counter_down}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Checklist Subtasks */}
+          {habit.subtasks && habit.subtasks.length > 0 && (
+            <div className="pl-6 space-y-1 pt-1.5 mt-1 border-t border-stone-100">
+              {habit.subtasks.map((sub) => (
+                <div
+                  key={sub.id}
+                  onClick={() => handleToggleSubtask(habit.id, sub.id, sub.completed)}
+                  className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer hover:text-stone-900"
+                >
+                  {sub.completed ? (
+                    <CheckSquare className="w-3 h-3 text-emerald-600 shrink-0" />
+                  ) : (
+                    <div className="w-3 h-3 border border-stone-300 rounded-xs shrink-0" />
+                  )}
+                  <span className={sub.completed ? 'line-through text-stone-400' : ''}>
+                    {sub.title}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Action Footer Bar */}
+          <div className="flex items-center justify-between gap-1.5 mt-2 pt-1.5 border-t border-stone-100 text-[10px]">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setGoblinTask(habit);
+                  setGoblinModalOpen(true);
+                }}
+                className="text-[10px] text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
+                title="Goblin Brain: Demolish this routine into micro starter steps"
+              >
+                <span>👺</span>
+                <span className="hidden sm:inline">Goblin</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {todayAction ? (
+                todayAction.completed ? (
+                  <span
+                    className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/90 dark:border-emerald-800 px-2 py-0.5 rounded font-medium flex items-center gap-1"
+                    title={t.habitActionDone || '✓ Tasca feta'}
+                  >
+                    {t.habitActionDone || '✓ Tasca feta'}
+                  </span>
+                ) : (
+                  <span
+                    className="text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200/90 dark:border-purple-800 px-2 py-0.5 rounded font-medium flex items-center gap-1"
+                    title={t.habitActionActive || '⚡ Tasca activa'}
+                  >
+                    {t.habitActionActive || '⚡ Tasca activa'}
+                  </span>
+                )
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleConvertHabitToTodayTask(habit)}
+                  className="text-[10px] text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/90 dark:border-indigo-800 px-2 py-0.5 rounded font-medium transition flex items-center gap-1"
+                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'avui per aquest hàbit"}
+                >
+                  <ListPlus className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>{t.convertHabitToTodayTask || 'Tasca avui'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+  // ================= COLUMN 1: HABITS (+/-) RENDERER =================
+  function renderHabitsColumn() {
+    return (
+      <div className="bg-stone-100/70 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/80 rounded-2xl flex flex-col max-h-[calc(100vh-210px)]">
+        {/* Header */}
+        <div className="p-3.5 border-b border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800 rounded-t-2xl space-y-2 shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span className="font-bold text-xs text-stone-800 dark:text-stone-200 uppercase tracking-wider">
+                {t.columnHabits || 'Hàbits (+/-)'} ({pureHabitsList.length})
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  setEditingTask(null);
+                  setDefaultTaskType('habit');
+                  setTaskModalOpen(true);
+                }}
+                className="p-1 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-lg transition"
+                title="Add Habit"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Habit Cards Container */}
+        <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
+          {pureHabitsList.length === 0 ? (
+            <div className="text-center py-12 px-4 text-xs text-stone-400">
+              <p className="font-medium text-stone-500 mb-1">{t.noHabitsMessage}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {pureHabitsList.map(renderHabitCard)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ================= COLUMN 2: DAILIES / RUTINES RENDERER =================
+  function renderDailiesColumn() {
+    return (
+      <div className="bg-stone-100/70 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/80 rounded-2xl flex flex-col max-h-[calc(100vh-210px)]">
+        {/* Header */}
+        <div className="p-3.5 border-b border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800 rounded-t-2xl space-y-2.5 shrink-0">
+          {/* Row 1: Title & Controls */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+              <span className="font-bold text-xs text-stone-800 dark:text-stone-200 uppercase tracking-wider">
+                {t.columnDailies || 'Rutines'} ({dailiesList.length})
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {/* Due Today toggle pill */}
+              <button
+                onClick={() => setHabitTab(habitTab === 'all' ? 'due_today' : 'all')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition ${
+                  habitTab === 'due_today'
+                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-semibold shadow-2xs'
+                    : 'bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 border-stone-200 dark:border-stone-600 hover:text-stone-700 dark:hover:text-stone-200'
+                }`}
+                title={habitTab === 'due_today' ? 'Showing Due Today. Click for all.' : 'Filter to Due Today'}
+              >
+                {t.subtabDueToday}
+              </button>
+
+              {/* Add Daily modal button */}
+              <button
+                onClick={() => {
+                  setEditingTask(null);
+                  setDefaultTaskType('daily');
+                  setTaskModalOpen(true);
+                }}
+                className="p-1 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-lg transition"
+                title="Add Daily Routine"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Time-of-Day Filter Pills */}
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar text-[11px] pt-1 border-t border-stone-100 dark:border-stone-700/60">
+            <button
+              onClick={() => setHabitTimeFilter('all')}
+              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
+                habitTimeFilter === 'all'
+                  ? 'bg-white dark:bg-stone-700 text-stone-800 dark:text-stone-100 border-stone-300 dark:border-stone-600 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-stone-100 dark:hover:bg-stone-700/60 hover:text-stone-700'
+              }`}
+            >
+              <span>{t.subtabAll}</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.all})</span>
+            </button>
+
+            <button
+              onClick={() => setHabitTimeFilter('morning')}
+              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
+                habitTimeFilter === 'morning'
+                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-amber-50/60 dark:hover:bg-amber-900/30 hover:text-amber-800'
+              }`}
+            >
+              <Sun className="w-3 h-3 text-amber-500" />
+              <span>{t.timeFilterMorning}</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.morning})</span>
+            </button>
+
+            <button
+              onClick={() => setHabitTimeFilter('workday')}
+              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
+                habitTimeFilter === 'workday'
+                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-200 border-blue-300 dark:border-blue-700 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-blue-50/60 dark:hover:bg-blue-900/30 hover:text-blue-800'
+              }`}
+            >
+              <Briefcase className="w-3 h-3 text-blue-500" />
+              <span>{t.timeFilterWorkday}</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.workday})</span>
+            </button>
+
+            <button
+              onClick={() => setHabitTimeFilter('evening')}
+              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
+                habitTimeFilter === 'evening'
+                  ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 border-purple-300 dark:border-purple-700 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-purple-50/60 dark:hover:bg-purple-900/30 hover:text-purple-800'
+              }`}
+            >
+              <Moon className="w-3 h-3 text-purple-500" />
+              <span>{t.timeFilterEvening}</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.evening})</span>
+            </button>
+
+            <button
+              onClick={() => setHabitTimeFilter('anytime')}
+              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
+                habitTimeFilter === 'anytime'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-emerald-50/60 dark:hover:bg-emerald-900/30 hover:text-emerald-800'
+              }`}
+            >
+              <Sparkles className="w-3 h-3 text-emerald-500" />
+              <span>{t.timeFilterAnytime}</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.anytime})</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Routine Cards Container */}
+        <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
+          {dailiesList.length === 0 ? (
+            <div className="text-center py-12 px-4 text-xs text-stone-400">
+              <p className="font-medium text-stone-500 mb-1">{t.noDailiesMessage || 'No daily routines found'}</p>
+            </div>
+          ) : habitTimeFilter === 'all' ? (
+            /* Sectioned Views under 'All' */
+            <div className="space-y-4">
+              {morningDailies.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-amber-900 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
+                    <div className="flex items-center gap-1.5">
+                      <Sun className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Morning Kickoff</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-mono font-medium">
+                      {morningDailies.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {morningDailies.map(renderHabitCard)}
+                  </div>
+                </div>
+              )}
+
+              {workdayDailies.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-blue-900 bg-blue-50/80 dark:bg-blue-950/40 rounded-lg border border-blue-200/60 dark:border-blue-800/40">
+                    <div className="flex items-center gap-1.5">
+                      <Briefcase className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Workday Focus</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-mono font-medium">
+                      {workdayDailies.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {workdayDailies.map(renderHabitCard)}
+                  </div>
+                </div>
+              )}
+
+              {eveningDailies.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-purple-900 bg-purple-50/80 dark:bg-purple-950/40 rounded-lg border border-purple-200/60 dark:border-purple-800/40">
+                    <div className="flex items-center gap-1.5">
+                      <Moon className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Evening Shutdown</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-mono font-medium">
+                      {eveningDailies.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {eveningDailies.map(renderHabitCard)}
+                  </div>
+                </div>
+              )}
+
+              {anytimeDailies.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-stone-700 dark:text-stone-300 bg-stone-100/80 dark:bg-stone-800/60 rounded-lg border border-stone-200/70 dark:border-stone-700/60">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Anytime Routines</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300 font-mono font-medium">
+                      {anytimeDailies.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {anytimeDailies.map(renderHabitCard)}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredDailiesList.length === 0 ? (
+                <div className="text-center py-10 px-4 text-xs text-stone-400">
+                  <p className="font-medium text-stone-500 mb-1 capitalize">
+                    No {habitTimeFilter} routines
+                  </p>
+                  <p>Edit or add a routine with the &ldquo;{habitTimeFilter}&rdquo; time-of-day tag.</p>
+                </div>
+              ) : (
+                filteredDailiesList.map(renderHabitCard)
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ================= COLUMN 2: TASKS RENDERER =================
+  function renderTasksColumn() {
+    return (
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragOverTasks(true);
+        }}
+        onDragLeave={() => setIsDragOverTasks(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragOverTasks(false);
+          const id = e.dataTransfer.getData('text/plain') || draggedTaskId;
+          if (id) {
+            const droppedTask = tasks.find((t) => t.id === id);
+            if (droppedTask && (droppedTask.type === 'habit' || droppedTask.type === 'daily')) {
+              handleConvertHabitToTodayTask(droppedTask);
+            } else if (taskTab === 'todo') {
+              handleSetTaskDate(id, selectedDate);
+            } else if (taskTab === 'without_timeline') {
+              handleSetTaskDate(id, null);
+            }
+          }
+        }}
+        className={`bg-stone-100/70 border rounded-2xl flex flex-col max-h-[calc(100vh-210px)] transition ${
+          isDragOverTasks ? 'border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50/20' : 'border-stone-200'
+        }`}
+      >
+        {/* Header with Habitica-Style Tabs: All, To Do, Without Timeline */}
+        <div className="p-3.5 border-b border-stone-200 flex flex-wrap items-center justify-between gap-2 bg-white rounded-t-2xl">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+            <span className="font-bold text-xs text-stone-800 uppercase tracking-wider">
+              {t.tasksTitle} ({tasksList.length})
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <div className="flex bg-stone-100 p-0.5 rounded-lg border border-stone-200 text-[11px]">
+              <button
+                onClick={() => setTaskTab('all')}
+                className={`px-2 py-0.5 rounded-md font-medium transition ${
+                  taskTab === 'all' ? 'bg-white text-stone-900 shadow-2xs font-semibold' : 'text-stone-500'
+                }`}
+              >
+                {t.subtabAll} ({allTasksList.length})
+              </button>
+              <button
+                onClick={() => setTaskTab('todo')}
+                className={`px-2 py-0.5 rounded-md font-medium transition ${
+                  taskTab === 'todo' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-stone-500'
+                }`}
+              >
+                {t.subtabToDo} ({todoTasksCount})
+              </button>
+              <button
+                onClick={() => setTaskTab('without_timeline')}
+                className={`px-2 py-0.5 rounded-md font-medium transition ${
+                  taskTab === 'without_timeline'
+                    ? 'bg-white text-stone-900 shadow-2xs font-semibold'
+                    : 'text-stone-500'
+                }`}
+              >
+                {t.subtabWithoutTimeline} ({withoutTimelineCount})
+              </button>
+            </div>
+
+            {/* Compassionate Sweep to Tomorrow */}
+            <button
+              type="button"
+              onClick={handleSweepIncompleteToTomorrow}
+              className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 rounded-md text-[11px] font-medium transition cursor-pointer"
+              title="Gently shift all unfinished tasks scheduled for today to tomorrow with zero guilt"
+            >
+              <span>🧹</span>
+              <span className="hidden sm:inline">Sweep to Tomorrow</span>
+            </button>
+
+            {/* Compassionate Stale Backlog Triage */}
+            {staleTasksList.length > 0 && (
+              <button
+                type="button"
+                onClick={handleTriageStaleTasks}
+                className="flex items-center gap-1 px-2 py-0.5 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-900 dark:text-purple-200 border border-purple-200/80 dark:border-purple-800 rounded-md text-[11px] font-medium transition cursor-pointer"
+                title="Gently rest stale tasks (>7 days old) into Someday"
+              >
+                <span>🧺</span>
+                <span className="hidden sm:inline">Rest Stale ({staleTasksList.length})</span>
+              </button>
+            )}
+
+            {/* Fast: Create Task for Today */}
+            <button
+              onClick={() => {
+                setEditingTask(null);
+                setDefaultTaskType('todo');
+                setModalDueDate(todayStr);
+                setTaskModalOpen(true);
+              }}
+              className="px-2 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition flex items-center gap-1"
+              title="Add task specifically scheduled for today"
+            >
+              <Plus className="w-3 h-3" />
+              <span>{t.plusTodayBtn}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Task Cards */}
+        <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
+          {tasksList.length === 0 ? (
+            <div className="text-center py-12 px-4 text-xs text-stone-400">
+              <p className="font-medium text-stone-500 mb-1">{t.noTasksMessage}</p>
+            </div>
+          ) : (
+            tasksList.map((task) => {
+              const isDone = Boolean(task.completed);
+              if (zenMode && isDone) return null;
+              const hasDeadline = Boolean(task.due_date || task.scheduled_date);
+              const isDueToday = task.due_date?.slice(0, 10) === todayStr;
+
+              if (densityMode === 'compact') {
+                return (
+                  <div
+                    key={task.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', task.id);
+                      setDraggedTaskId(task.id);
+                    }}
+                    onDragEnd={() => setDraggedTaskId(null)}
+                    onClick={() => {
+                      setEditingTask(task);
+                      setTaskModalOpen(true);
+                    }}
+                    className={`px-3 py-2 rounded-xl border transition shadow-2xs flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+                      isDone
+                        ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-60'
+                        : task.habit_id
+                        ? 'bg-purple-50/20 dark:bg-purple-950/20 border-purple-200/90 dark:border-purple-800/80 hover:border-purple-400'
+                        : 'bg-white dark:bg-stone-800 border-stone-200/90 dark:border-stone-700/80 hover:border-indigo-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleScoreTask(task.id, 'up');
+                        }}
+                        className="text-stone-400 hover:text-indigo-600 shrink-0"
+                        title={isDone ? 'Mark incomplete' : 'Mark complete'}
+                      >
+                        {isDone ? (
+                          <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                        ) : (
+                          <Circle className="w-4 h-4" />
+                        )}
+                      </button>
+                      {task.habit_id && (
+                        <span className="text-[10px] text-purple-600 dark:text-purple-400 shrink-0 font-bold" title={t.habitActionBadge || "Tasca d'hàbit"}>
+                          🔁
+                        </span>
+                      )}
+                      <span className={`text-xs font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>
+                        {task.title}
+                      </span>
+                      {isTaskStale(task) && (
+                        <span className="text-[10px] text-purple-600 dark:text-purple-400 font-mono shrink-0" title="Stale task (>7 days)">
+                          ⏳
+                        </span>
+                      )}
+                      {task.scheduled_start && (
+                        <span className="text-[10px] text-indigo-600 font-mono font-medium flex items-center gap-0.5 shrink-0">
+                          <Clock className="w-3 h-3" />
+                          {task.scheduled_start}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handlePushTaskToTomorrow(task.id)}
+                        className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200"
+                        title="Push to tomorrow"
+                      >
+                        ⏩
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGoblinTask(task);
+                          setGoblinModalOpen(true);
+                        }}
+                        className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200"
+                        title="Goblin Brain Starter Steps"
+                      >
+                        👺
+                      </button>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
+                        {task.difficulty === 'trivial' ? 'XS' : task.difficulty === 'easy' ? 'S' : task.difficulty === 'medium' ? 'M' : 'L'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={task.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', task.id);
+                    setDraggedTaskId(task.id);
+                  }}
+                  onDragEnd={() => setDraggedTaskId(null)}
+                  className={`p-3 rounded-xl border transition shadow-2xs cursor-grab active:cursor-grabbing ${
+                    isDone
+                      ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-70'
+                      : task.habit_id
+                      ? 'bg-purple-50/20 border-purple-200/90 hover:border-purple-300'
+                      : 'bg-white border-stone-200/90 hover:border-stone-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <button
+                      onClick={() => handleScoreTask(task.id, 'up')}
+                      className="mt-0.5 text-stone-400 hover:text-indigo-600 shrink-0"
+                      title={isDone ? 'Mark incomplete' : 'Mark complete'}
+                    >
+                      {isDone ? (
+                        <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                      ) : (
+                        <Circle className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-1">
+                        <span
+                          onClick={() => {
+                            setEditingTask(task);
+                            setTaskModalOpen(true);
+                          }}
+                          className={`font-semibold text-xs cursor-pointer hover:text-indigo-600 truncate ${
+                            isDone ? 'line-through text-stone-400' : 'text-stone-800'
+                          }`}
+                        >
+                          {task.title}
+                        </span>
+
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 ${
+                            task.difficulty === 'hard'
+                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                              : task.difficulty === 'medium'
+                              ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : task.difficulty === 'trivial'
+                              ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                              : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          }`}
+                          title={
+                            task.difficulty === 'trivial'
+                              ? 'XS (5–15m)'
+                              : task.difficulty === 'medium'
+                              ? 'M (30–60m)'
+                              : task.difficulty === 'hard'
+                              ? 'L (60m+)'
+                              : 'S (15–30m)'
+                          }
+                        >
+                          {task.difficulty === 'trivial' ? 'XS' : task.difficulty === 'easy' ? 'S' : task.difficulty === 'medium' ? 'M' : 'L'}
+                        </span>
+                      </div>
+
+                      {/* Project Tag */}
+                      {task.project_name && (
+                        <div className="mt-1">
+                          <span
+                            className="px-1.5 py-0.2 rounded text-[9px] font-medium border"
+                            style={{
+                              backgroundColor: `${task.project_color || '#6366f1'}15`,
+                              color: task.project_color || '#6366f1',
+                              borderColor: `${task.project_color || '#6366f1'}30`,
+                            }}
+                          >
+                            ● {task.project_name}
+                          </span>
+                        </div>
+                      )}
+
+                      {task.notes && (
+                        <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
+                          {task.notes}
+                        </p>
+                      )}
+
+                      {/* Habit Action Indicator */}
+                      {task.habit_id && (() => {
+                        const parentHabit = tasks.find((h) => h.id === task.habit_id);
+                        return (
+                          <div className="mt-1 flex items-center justify-between gap-1 text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800 font-medium">
+                            <div className="flex items-center gap-1 truncate">
+                              <span>🔁</span>
+                              <span className="font-semibold">{t.habitActionBadge || "Tasca d'hàbit"}:</span>
+                              <span className="truncate">{parentHabit ? parentHabit.title : ''}</span>
+                            </div>
+                            {parentHabit && (parentHabit.streak !== undefined || parentHabit.counter_up !== undefined) && (
+                              <span className="shrink-0 text-amber-600 dark:text-amber-400 font-bold">
+                                🔥 {parentHabit.streak || parentHabit.counter_up || 0}d
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Habit Stacking Cue Pill */}
+                      {task.anchor_habit_title && (
+                        <div className="mt-1 flex items-center gap-1 text-[10px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-800/60 font-medium">
+                          <span>🔗</span>
+                          <span>After: {task.anchor_habit_title}</span>
+                        </div>
+                      )}
+
+                      {/* Micro-Habit Starter Step Chip with 1-Tap Floor Completion */}
+                      {task.micro_habit_title && (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isDone) {
+                              handleScoreTask(task.id, 'up');
+                              setMindfulReflection('🌱 Starter step logged! You maintained your momentum on a low-spoon day.');
+                              if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+                              reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
+                            }
+                          }}
+                          className={`mt-1 inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md border font-medium transition cursor-pointer select-none ${
+                            isDone
+                              ? 'bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                              : 'bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700 active:scale-95'
+                          }`}
+                          title={isDone ? 'Starter step completed' : 'Tap to complete starter step (< 30s)'}
+                        >
+                          <span>🌱</span>
+                          <span className="font-semibold">Starter Step:</span>
+                          <span className={isDone ? 'line-through text-stone-500' : ''}>{task.micro_habit_title}</span>
+                          {!isDone && (
+                            <span className="ml-1 text-[9px] bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.2 rounded font-bold shadow-2xs">
+                              Do Now
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Compassionate Stale Backlog Triage Badge */}
+                      {isTaskStale(task) && (
+                        <div className="mt-1 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800/60 font-medium inline-flex items-center gap-1">
+                            <span>⏳</span>
+                            <span>Stale (7d+)</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const futureDate = new Date();
+                              futureDate.setDate(futureDate.getDate() + 30);
+                              handleScheduleTask(task.id, futureDate.toISOString().slice(0, 10));
+                              setMindfulReflection('🧺 Task rested to Someday. Zero guilt!');
+                              if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+                              reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
+                            }}
+                            className="text-[10px] text-stone-600 dark:text-stone-400 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/60 px-1.5 py-0.5 rounded border border-stone-200 dark:border-stone-700 transition cursor-pointer"
+                            title="Rest task to Someday (+30 days)"
+                          >
+                            <span>Rest to Someday</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Timeline Date & Scheduling Controls */}
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 mt-2 pt-1 border-t border-stone-100 text-[10px]">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {task.due_date ? (
+                            <span
+                              className={`flex items-center gap-1 font-medium px-1.5 py-0.5 rounded border font-mono ${
+                                isDueToday
+                                  ? 'text-indigo-700 bg-indigo-50 border-indigo-200 font-semibold'
+                                  : 'text-amber-700 bg-amber-50 border-amber-200'
+                              }`}
+                            >
+                              <Calendar className="w-3 h-3 text-amber-600" />
+                              {isDueToday ? t.taskBtnToday : `${t.duePrefix} ${task.due_date}`}
+                            </span>
+                          ) : (
+                            <span className="text-stone-400 italic">{t.noTimeline}</span>
+                          )}
+
+                          {task.scheduled_start && (
+                            <span className="flex items-center gap-1 font-medium text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 font-mono">
+                              <Clock className="w-3 h-3 text-indigo-600" />
+                              {task.scheduled_start}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Action buttons: "For Today" and "Add to Agenda" */}
+                        <div className="flex items-center gap-1">
+                          {!isDueToday && (
+                            <button
+                              onClick={() => handleMarkTaskForToday(task.id)}
+                              className="text-[10px] text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded font-medium transition"
+                              title="Set due date to today so it can be scheduled on the agenda"
+                            >
+                              {t.plusTodayBtn}
+                            </button>
+                          )}
+
+                          {isDueToday && !task.scheduled_start && (
+                            <button
+                              onClick={() => handleQuickScheduleTodayToAgenda(task.id)}
+                              className="text-[10px] text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded font-medium transition flex items-center gap-0.5"
+                              title="Place onto today's agenda time grid"
+                            >
+                              <Clock className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>{t.taskBtnAgenda}</span>
+                            </button>
+                          )}
+
+                          {/* 1-Tap Defer to Tomorrow */}
+                          <button
+                            type="button"
+                            onClick={() => handlePushTaskToTomorrow(task.id)}
+                            className="text-[10px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
+                            title="Gently push task to tomorrow"
+                          >
+                            <span>⏩</span>
+                            <span className="hidden sm:inline">Tomorrow</span>
+                          </button>
+
+                          {/* Goblin Brain Demolisher */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGoblinTask(task);
+                              setGoblinModalOpen(true);
+                            }}
+                            className="text-[10px] text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
+                            title="Goblin Brain: Demolish this task into micro starter steps"
+                          >
+                            <span>👺</span>
+                            <span className="hidden sm:inline">Goblin</span>
+                          </button>
+
+                          {hasDeadline && (
+                            <button
+                              onClick={() => handleSetTaskDate(task.id, null)}
+                              className="text-[10px] text-stone-400 hover:text-stone-700 px-1.5 py-0.5 rounded hover:bg-stone-100"
+                              title="Return to Without Timeline backlog"
+                            >
+                              {t.taskBtnClear}
+                            </button>
+                          )}
+                          <GripVertical className="w-3.5 h-3.5 text-stone-400 shrink-0 cursor-grab" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Checklist subtasks */}
+                  {task.subtasks && task.subtasks.length > 0 && (
+                    <div className="pl-6 space-y-1 pt-1.5 mt-1 border-t border-stone-100">
+                      {task.subtasks.map((sub) => (
+                        <div
+                          key={sub.id}
+                          onClick={() => handleToggleSubtask(task.id, sub.id, sub.completed)}
+                          className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer hover:text-stone-900"
+                        >
+                          {sub.completed ? (
+                            <CheckSquare className="w-3 h-3 text-indigo-600 shrink-0" />
+                          ) : (
+                            <div className="w-3 h-3 border border-stone-300 rounded-xs shrink-0" />
+                          )}
+                          <span className={sub.completed ? 'line-through text-stone-400' : ''}>
+                            {sub.title}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }
+
+
   return (
     <div className="min-h-screen bg-[#fafaf9] text-stone-800 flex flex-row font-sans pb-16 md:pb-0">
       {/* Desktop Navigation Sidebar */}
@@ -2494,1153 +3644,4 @@ export const App: React.FC = () => {
       </nav>
     </div>
   );
-
-  // ================= HABIT / DAILY CARD RENDERER =================
-  const renderHabitCard = (habit: Task) => {
-      const isDone = Boolean(habit.completed);
-      if (zenMode && isDone) return null;
-      const tod = (habit.time_of_day || 'anytime') as 'morning' | 'workday' | 'evening' | 'anytime';
-      const inGrace = isTaskInGracePeriod(habit, todayStr);
-      const todayAction = tasks.find(
-        (t) =>
-          t.habit_id === habit.id &&
-          (t.due_date?.slice(0, 10) === todayStr || t.scheduled_date?.slice(0, 10) === todayStr)
-      );
-
-      if (densityMode === 'compact') {
-        return (
-          <div
-            key={habit.id}
-            draggable={true}
-            onDragStart={(e) => {
-              e.dataTransfer.setData('text/plain', habit.id);
-              setDraggedTaskId(habit.id);
-            }}
-            onDragEnd={() => setDraggedTaskId(null)}
-            onClick={() => {
-              setEditingTask(habit);
-              setTaskModalOpen(true);
-            }}
-            className={`px-3 py-2 rounded-xl border transition shadow-2xs flex items-center justify-between gap-2.5 cursor-pointer select-none ${
-              isDone
-                ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-60'
-                : 'bg-white dark:bg-stone-800 border-stone-200/90 dark:border-stone-700/80 hover:border-indigo-300'
-            }`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              {habit.type === 'daily' && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleScoreTask(habit.id, 'up');
-                  }}
-                  className="text-stone-400 hover:text-emerald-600 shrink-0"
-                  title={isDone ? 'Mark incomplete' : 'Mark done for today'}
-                >
-                  {isDone ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  ) : (
-                    <Circle className="w-4 h-4" />
-                  )}
-                </button>
-              )}
-              <span className={`text-xs font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>
-                {habit.title}
-              </span>
-              {habit.streak > 0 && habit.type === 'daily' && (
-                <span className="text-[10px] text-amber-600 font-mono flex items-center gap-0.5 shrink-0">
-                  <Flame className="w-3 h-3 text-amber-500" />
-                  {habit.streak}d
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-              {(Boolean(habit.habit_positive) || Boolean(habit.habit_negative)) && (
-                <div className="flex items-center gap-1">
-                  {Boolean(habit.habit_positive) && (
-                    <button
-                      type="button"
-                      onClick={() => handleScoreTask(habit.id, 'up')}
-                      className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded text-[10px] font-bold"
-                    >
-                      +{habit.counter_up || 0}
-                    </button>
-                  )}
-                  {Boolean(habit.habit_negative) && (
-                    <button
-                      type="button"
-                      onClick={() => handleScoreTask(habit.id, 'down')}
-                      className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded text-[10px] font-bold"
-                    >
-                      -{habit.counter_down || 0}
-                    </button>
-                  )}
-                </div>
-              )}
-              {todayAction ? (
-                todayAction.completed ? (
-                  <span
-                    className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 rounded text-[9px] font-semibold flex items-center gap-0.5"
-                    title={t.habitActionDone || '✓ Tasca feta'}
-                  >
-                    {t.habitActionDone || '✓ Tasca feta'}
-                  </span>
-                ) : (
-                  <span
-                    className="px-1.5 py-0.5 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 rounded text-[9px] font-semibold flex items-center gap-0.5"
-                    title={t.habitActionActive || '⚡ Tasca activa'}
-                  >
-                    {t.habitActionActive || '⚡ Tasca activa'}
-                  </span>
-                )
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleConvertHabitToTodayTask(habit)}
-                  className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/70 rounded text-[9px] font-semibold transition flex items-center gap-0.5"
-                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'avui per aquest hàbit"}
-                >
-                  <ListPlus className="w-2.5 h-2.5" />
-                  <span>{t.convertHabitToTodayTask || 'Tasca avui'}</span>
-                </button>
-              )}
-              <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
-                {habit.difficulty === 'trivial' ? 'XS' : habit.difficulty === 'easy' ? 'S' : habit.difficulty === 'medium' ? 'M' : 'L'}
-              </span>
-            </div>
-          </div>
-        );
-      }
-
-      return (
-        <div
-          key={habit.id}
-          draggable={true}
-          onDragStart={(e) => {
-            e.dataTransfer.setData('text/plain', habit.id);
-            setDraggedTaskId(habit.id);
-          }}
-          onDragEnd={() => setDraggedTaskId(null)}
-          className={`p-3 rounded-xl border transition shadow-2xs cursor-grab active:cursor-grabbing ${
-            isDone
-              ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-70'
-              : 'bg-white border-stone-200/90 hover:border-stone-300'
-          }`}
-        >
-          <div className="flex items-start gap-2.5">
-            {/* Checkbox for Daily/Periodical */}
-            {habit.type === 'daily' && (
-              <button
-                onClick={() => handleScoreTask(habit.id, 'up')}
-                className="mt-0.5 text-stone-400 hover:text-emerald-600 shrink-0"
-                title={isDone ? 'Mark incomplete' : 'Mark done for today'}
-              >
-                {isDone ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <Circle className="w-4 h-4" />
-                )}
-              </button>
-            )}
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-1">
-                <span
-                  onClick={() => {
-                    setEditingTask(habit);
-                    setTaskModalOpen(true);
-                  }}
-                  className={`font-semibold text-xs cursor-pointer hover:text-indigo-600 truncate ${
-                    isDone ? 'line-through text-stone-400' : 'text-stone-800'
-                  }`}
-                >
-                  {habit.title}
-                </span>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  {/* Time-of-Day Pill */}
-                  <span
-                    className={`text-[9px] px-1.5 py-0.2 rounded font-medium border capitalize ${
-                      tod === 'morning'
-                        ? 'bg-amber-50 text-amber-800 border-amber-200'
-                        : tod === 'workday'
-                        ? 'bg-blue-50 text-blue-800 border-blue-200'
-                        : tod === 'evening'
-                        ? 'bg-purple-50 text-purple-800 border-purple-200'
-                        : 'bg-stone-50 text-stone-600 border-stone-200'
-                    }`}
-                  >
-                    {tod}
-                  </span>
-
-                  {/* Pastel Difficulty Badge */}
-                  <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 ${
-                      habit.difficulty === 'hard'
-                        ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                        : habit.difficulty === 'medium'
-                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                        : habit.difficulty === 'trivial'
-                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
-                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                    }`}
-                    title={
-                      habit.difficulty === 'trivial'
-                        ? 'XS (5–15m)'
-                        : habit.difficulty === 'medium'
-                        ? 'M (30–60m)'
-                        : habit.difficulty === 'hard'
-                        ? 'L (60m+)'
-                        : 'S (15–30m)'
-                    }
-                  >
-                    {habit.difficulty === 'trivial' ? 'XS' : habit.difficulty === 'easy' ? 'S' : habit.difficulty === 'medium' ? 'M' : 'L'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Project Tag */}
-              {habit.project_name && (
-                <div className="mt-1">
-                  <span
-                    className="px-1.5 py-0.2 rounded text-[9px] font-medium border"
-                    style={{
-                      backgroundColor: `${habit.project_color || '#6366f1'}15`,
-                      color: habit.project_color || '#6366f1',
-                      borderColor: `${habit.project_color || '#6366f1'}30`,
-                    }}
-                  >
-                    ● {habit.project_name}
-                  </span>
-                </div>
-              )}
-
-              {habit.notes && (
-                <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
-                  {habit.notes}
-                </p>
-              )}
-
-              {/* Habit Stacking Cue Pill */}
-              {habit.anchor_habit_title && (
-                <div className="mt-1 flex items-center gap-1 text-[10px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-800/60 font-medium">
-                  <span>🔗</span>
-                  <span>After: {habit.anchor_habit_title}</span>
-                </div>
-              )}
-
-              {/* Micro-Habit Starter Step Chip with 1-Tap Floor Completion */}
-              {habit.micro_habit_title && (
-                <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!isDone) {
-                      handleScoreTask(habit.id, 'up');
-                      setMindfulReflection('🌱 Starter step logged! You maintained your habit momentum on a low-spoon day.');
-                      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
-                      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
-                    }
-                  }}
-                  className={`mt-1 inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md border font-medium transition cursor-pointer select-none ${
-                    isDone
-                      ? 'bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
-                      : 'bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700 active:scale-95'
-                  }`}
-                  title={isDone ? 'Starter step completed' : 'Tap to log starter step (< 30s floor habit)'}
-                >
-                  <span>🌱</span>
-                  <span className="font-semibold">Starter Step:</span>
-                  <span className={isDone ? 'line-through text-stone-500' : ''}>{habit.micro_habit_title}</span>
-                  {!isDone && (
-                    <span className="ml-1 text-[9px] bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.2 rounded font-bold shadow-2xs">
-                      Do Now
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Cadence info & Streak & Compassionate Grace Shield */}
-              <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[10px] text-stone-400">
-                {habit.type === 'daily' && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="flex items-center gap-0.5 text-amber-600 font-semibold font-mono">
-                      <Flame className="w-3 h-3 text-amber-500" />
-                      {habit.streak}d streak
-                    </span>
-                    <StreakGrowthBadge streak={habit.streak} size="xs" />
-                    {inGrace && (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-sky-100 dark:bg-sky-950/70 border border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200"
-                        title={getStreakGraceMessage(habit.streak, true)}
-                      >
-                        <span>🛡️</span>
-                        <span>Shield Active</span>
-                      </span>
-                    )}
-                  </div>
-                )}
-                <span>•</span>
-                <span className="capitalize text-stone-500">
-                  {habit.type === 'daily' ? habit.frequency : 'Flexible habit'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Optional +/- Counter Buttons */}
-          {(Boolean(habit.habit_positive) || Boolean(habit.habit_negative)) && (
-            <div className="flex items-center justify-between pt-2 mt-2 border-t border-stone-100">
-              <span className="text-[10px] text-stone-400 font-medium">Counters:</span>
-              <div className="flex items-center gap-1.5">
-                {Boolean(habit.habit_positive) && (
-                  <button
-                    onClick={() => handleScoreTask(habit.id, 'up')}
-                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-md text-xs font-bold transition flex items-center gap-1"
-                    title="Add +1"
-                  >
-                    <span>+</span>
-                    <span className="font-mono text-[10px]">{habit.counter_up}</span>
-                  </button>
-                )}
-                {Boolean(habit.habit_negative) && (
-                  <button
-                    onClick={() => handleScoreTask(habit.id, 'down')}
-                    className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-md text-xs font-bold transition flex items-center gap-1"
-                    title="Subtract -1"
-                  >
-                    <span>-</span>
-                    <span className="font-mono text-[10px]">{habit.counter_down}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Checklist Subtasks */}
-          {habit.subtasks && habit.subtasks.length > 0 && (
-            <div className="pl-6 space-y-1 pt-1.5 mt-1 border-t border-stone-100">
-              {habit.subtasks.map((sub) => (
-                <div
-                  key={sub.id}
-                  onClick={() => handleToggleSubtask(habit.id, sub.id, sub.completed)}
-                  className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer hover:text-stone-900"
-                >
-                  {sub.completed ? (
-                    <CheckSquare className="w-3 h-3 text-emerald-600 shrink-0" />
-                  ) : (
-                    <div className="w-3 h-3 border border-stone-300 rounded-xs shrink-0" />
-                  )}
-                  <span className={sub.completed ? 'line-through text-stone-400' : ''}>
-                    {sub.title}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Action Footer Bar */}
-          <div className="flex items-center justify-between gap-1.5 mt-2 pt-1.5 border-t border-stone-100 text-[10px]">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setGoblinTask(habit);
-                  setGoblinModalOpen(true);
-                }}
-                className="text-[10px] text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
-                title="Goblin Brain: Demolish this routine into micro starter steps"
-              >
-                <span>👺</span>
-                <span className="hidden sm:inline">Goblin</span>
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {todayAction ? (
-                todayAction.completed ? (
-                  <span
-                    className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/90 dark:border-emerald-800 px-2 py-0.5 rounded font-medium flex items-center gap-1"
-                    title={t.habitActionDone || '✓ Tasca feta'}
-                  >
-                    {t.habitActionDone || '✓ Tasca feta'}
-                  </span>
-                ) : (
-                  <span
-                    className="text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200/90 dark:border-purple-800 px-2 py-0.5 rounded font-medium flex items-center gap-1"
-                    title={t.habitActionActive || '⚡ Tasca activa'}
-                  >
-                    {t.habitActionActive || '⚡ Tasca activa'}
-                  </span>
-                )
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleConvertHabitToTodayTask(habit)}
-                  className="text-[10px] text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/90 dark:border-indigo-800 px-2 py-0.5 rounded font-medium transition flex items-center gap-1"
-                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'avui per aquest hàbit"}
-                >
-                  <ListPlus className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
-                  <span>{t.convertHabitToTodayTask || 'Tasca avui'}</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    };
-
-  // ================= COLUMN 1: HABITS (+/-) RENDERER =================
-  function renderHabitsColumn() {
-    return (
-      <div className="bg-stone-100/70 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/80 rounded-2xl flex flex-col max-h-[calc(100vh-210px)]">
-        {/* Header */}
-        <div className="p-3.5 border-b border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800 rounded-t-2xl space-y-2 shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span className="font-bold text-xs text-stone-800 dark:text-stone-200 uppercase tracking-wider">
-                {t.columnHabits || 'Hàbits (+/-)'} ({pureHabitsList.length})
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => {
-                  setEditingTask(null);
-                  setDefaultTaskType('habit');
-                  setTaskModalOpen(true);
-                }}
-                className="p-1 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-lg transition"
-                title="Add Habit"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Habit Cards Container */}
-        <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
-          {pureHabitsList.length === 0 ? (
-            <div className="text-center py-12 px-4 text-xs text-stone-400">
-              <p className="font-medium text-stone-500 mb-1">{t.noHabitsMessage}</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {pureHabitsList.map(renderHabitCard)}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ================= COLUMN 2: DAILIES / RUTINES RENDERER =================
-  function renderDailiesColumn() {
-    return (
-      <div className="bg-stone-100/70 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/80 rounded-2xl flex flex-col max-h-[calc(100vh-210px)]">
-        {/* Header */}
-        <div className="p-3.5 border-b border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800 rounded-t-2xl space-y-2.5 shrink-0">
-          {/* Row 1: Title & Controls */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-              <span className="font-bold text-xs text-stone-800 dark:text-stone-200 uppercase tracking-wider">
-                {t.columnDailies || 'Rutines'} ({dailiesList.length})
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {/* Due Today toggle pill */}
-              <button
-                onClick={() => setHabitTab(habitTab === 'all' ? 'due_today' : 'all')}
-                className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition ${
-                  habitTab === 'due_today'
-                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-semibold shadow-2xs'
-                    : 'bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 border-stone-200 dark:border-stone-600 hover:text-stone-700 dark:hover:text-stone-200'
-                }`}
-                title={habitTab === 'due_today' ? 'Showing Due Today. Click for all.' : 'Filter to Due Today'}
-              >
-                {t.subtabDueToday}
-              </button>
-
-              {/* Add Daily modal button */}
-              <button
-                onClick={() => {
-                  setEditingTask(null);
-                  setDefaultTaskType('daily');
-                  setTaskModalOpen(true);
-                }}
-                className="p-1 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-lg transition"
-                title="Add Daily Routine"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Row 2: Time-of-Day Filter Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar text-[11px] pt-1 border-t border-stone-100 dark:border-stone-700/60">
-            <button
-              onClick={() => setHabitTimeFilter('all')}
-              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
-                habitTimeFilter === 'all'
-                  ? 'bg-white dark:bg-stone-700 text-stone-800 dark:text-stone-100 border-stone-300 dark:border-stone-600 shadow-2xs font-semibold'
-                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-stone-100 dark:hover:bg-stone-700/60 hover:text-stone-700'
-              }`}
-            >
-              <span>{t.subtabAll}</span>
-              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.all})</span>
-            </button>
-
-            <button
-              onClick={() => setHabitTimeFilter('morning')}
-              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
-                habitTimeFilter === 'morning'
-                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs font-semibold'
-                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-amber-50/60 dark:hover:bg-amber-900/30 hover:text-amber-800'
-              }`}
-            >
-              <Sun className="w-3 h-3 text-amber-500" />
-              <span>{t.timeFilterMorning}</span>
-              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.morning})</span>
-            </button>
-
-            <button
-              onClick={() => setHabitTimeFilter('workday')}
-              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
-                habitTimeFilter === 'workday'
-                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-200 border-blue-300 dark:border-blue-700 shadow-2xs font-semibold'
-                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-blue-50/60 dark:hover:bg-blue-900/30 hover:text-blue-800'
-              }`}
-            >
-              <Briefcase className="w-3 h-3 text-blue-500" />
-              <span>{t.timeFilterWorkday}</span>
-              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.workday})</span>
-            </button>
-
-            <button
-              onClick={() => setHabitTimeFilter('evening')}
-              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
-                habitTimeFilter === 'evening'
-                  ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 border-purple-300 dark:border-purple-700 shadow-2xs font-semibold'
-                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-purple-50/60 dark:hover:bg-purple-900/30 hover:text-purple-800'
-              }`}
-            >
-              <Moon className="w-3 h-3 text-purple-500" />
-              <span>{t.timeFilterEvening}</span>
-              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.evening})</span>
-            </button>
-
-            <button
-              onClick={() => setHabitTimeFilter('anytime')}
-              className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
-                habitTimeFilter === 'anytime'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700 shadow-2xs font-semibold'
-                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-emerald-50/60 dark:hover:bg-emerald-900/30 hover:text-emerald-800'
-              }`}
-            >
-              <Sparkles className="w-3 h-3 text-emerald-500" />
-              <span>{t.timeFilterAnytime}</span>
-              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.anytime})</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Routine Cards Container */}
-        <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
-          {dailiesList.length === 0 ? (
-            <div className="text-center py-12 px-4 text-xs text-stone-400">
-              <p className="font-medium text-stone-500 mb-1">{t.noDailiesMessage || 'No daily routines found'}</p>
-            </div>
-          ) : habitTimeFilter === 'all' ? (
-            /* Sectioned Views under 'All' */
-            <div className="space-y-4">
-              {morningDailies.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-amber-900 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
-                    <div className="flex items-center gap-1.5">
-                      <Sun className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Morning Kickoff</span>
-                    </div>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-mono font-medium">
-                      {morningDailies.length}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {morningDailies.map(renderHabitCard)}
-                  </div>
-                </div>
-              )}
-
-              {workdayDailies.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-blue-900 bg-blue-50/80 dark:bg-blue-950/40 rounded-lg border border-blue-200/60 dark:border-blue-800/40">
-                    <div className="flex items-center gap-1.5">
-                      <Briefcase className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Workday Focus</span>
-                    </div>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-mono font-medium">
-                      {workdayDailies.length}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {workdayDailies.map(renderHabitCard)}
-                  </div>
-                </div>
-              )}
-
-              {eveningDailies.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-purple-900 bg-purple-50/80 dark:bg-purple-950/40 rounded-lg border border-purple-200/60 dark:border-purple-800/40">
-                    <div className="flex items-center gap-1.5">
-                      <Moon className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Evening Shutdown</span>
-                    </div>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-mono font-medium">
-                      {eveningDailies.length}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {eveningDailies.map(renderHabitCard)}
-                  </div>
-                </div>
-              )}
-
-              {anytimeDailies.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-stone-700 dark:text-stone-300 bg-stone-100/80 dark:bg-stone-800/60 rounded-lg border border-stone-200/70 dark:border-stone-700/60">
-                    <div className="flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Anytime Routines</span>
-                    </div>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300 font-mono font-medium">
-                      {anytimeDailies.length}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {anytimeDailies.map(renderHabitCard)}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredDailiesList.length === 0 ? (
-                <div className="text-center py-10 px-4 text-xs text-stone-400">
-                  <p className="font-medium text-stone-500 mb-1 capitalize">
-                    No {habitTimeFilter} routines
-                  </p>
-                  <p>Edit or add a routine with the &ldquo;{habitTimeFilter}&rdquo; time-of-day tag.</p>
-                </div>
-              ) : (
-                filteredDailiesList.map(renderHabitCard)
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ================= COLUMN 2: TASKS RENDERER =================
-  function renderTasksColumn() {
-    return (
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragOverTasks(true);
-        }}
-        onDragLeave={() => setIsDragOverTasks(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setIsDragOverTasks(false);
-          const id = e.dataTransfer.getData('text/plain') || draggedTaskId;
-          if (id) {
-            const droppedTask = tasks.find((t) => t.id === id);
-            if (droppedTask && (droppedTask.type === 'habit' || droppedTask.type === 'daily')) {
-              handleConvertHabitToTodayTask(droppedTask);
-            } else if (taskTab === 'todo') {
-              handleSetTaskDate(id, selectedDate);
-            } else if (taskTab === 'without_timeline') {
-              handleSetTaskDate(id, null);
-            }
-          }
-        }}
-        className={`bg-stone-100/70 border rounded-2xl flex flex-col max-h-[calc(100vh-210px)] transition ${
-          isDragOverTasks ? 'border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50/20' : 'border-stone-200'
-        }`}
-      >
-        {/* Header with Habitica-Style Tabs: All, To Do, Without Timeline */}
-        <div className="p-3.5 border-b border-stone-200 flex flex-wrap items-center justify-between gap-2 bg-white rounded-t-2xl">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
-            <span className="font-bold text-xs text-stone-800 uppercase tracking-wider">
-              {t.tasksTitle} ({tasksList.length})
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <div className="flex bg-stone-100 p-0.5 rounded-lg border border-stone-200 text-[11px]">
-              <button
-                onClick={() => setTaskTab('all')}
-                className={`px-2 py-0.5 rounded-md font-medium transition ${
-                  taskTab === 'all' ? 'bg-white text-stone-900 shadow-2xs font-semibold' : 'text-stone-500'
-                }`}
-              >
-                {t.subtabAll} ({allTasksList.length})
-              </button>
-              <button
-                onClick={() => setTaskTab('todo')}
-                className={`px-2 py-0.5 rounded-md font-medium transition ${
-                  taskTab === 'todo' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-stone-500'
-                }`}
-              >
-                {t.subtabToDo} ({todoTasksCount})
-              </button>
-              <button
-                onClick={() => setTaskTab('without_timeline')}
-                className={`px-2 py-0.5 rounded-md font-medium transition ${
-                  taskTab === 'without_timeline'
-                    ? 'bg-white text-stone-900 shadow-2xs font-semibold'
-                    : 'text-stone-500'
-                }`}
-              >
-                {t.subtabWithoutTimeline} ({withoutTimelineCount})
-              </button>
-            </div>
-
-            {/* Compassionate Sweep to Tomorrow */}
-            <button
-              type="button"
-              onClick={handleSweepIncompleteToTomorrow}
-              className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 rounded-md text-[11px] font-medium transition cursor-pointer"
-              title="Gently shift all unfinished tasks scheduled for today to tomorrow with zero guilt"
-            >
-              <span>🧹</span>
-              <span className="hidden sm:inline">Sweep to Tomorrow</span>
-            </button>
-
-            {/* Compassionate Stale Backlog Triage */}
-            {staleTasksList.length > 0 && (
-              <button
-                type="button"
-                onClick={handleTriageStaleTasks}
-                className="flex items-center gap-1 px-2 py-0.5 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-900 dark:text-purple-200 border border-purple-200/80 dark:border-purple-800 rounded-md text-[11px] font-medium transition cursor-pointer"
-                title="Gently rest stale tasks (>7 days old) into Someday"
-              >
-                <span>🧺</span>
-                <span className="hidden sm:inline">Rest Stale ({staleTasksList.length})</span>
-              </button>
-            )}
-
-            {/* Fast: Create Task for Today */}
-            <button
-              onClick={() => {
-                setEditingTask(null);
-                setDefaultTaskType('todo');
-                setModalDueDate(todayStr);
-                setTaskModalOpen(true);
-              }}
-              className="px-2 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition flex items-center gap-1"
-              title="Add task specifically scheduled for today"
-            >
-              <Plus className="w-3 h-3" />
-              <span>{t.plusTodayBtn}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Task Cards */}
-        <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
-          {tasksList.length === 0 ? (
-            <div className="text-center py-12 px-4 text-xs text-stone-400">
-              <p className="font-medium text-stone-500 mb-1">{t.noTasksMessage}</p>
-            </div>
-          ) : (
-            tasksList.map((task) => {
-              const isDone = Boolean(task.completed);
-              if (zenMode && isDone) return null;
-              const hasDeadline = Boolean(task.due_date || task.scheduled_date);
-              const isDueToday = task.due_date?.slice(0, 10) === todayStr;
-
-              if (densityMode === 'compact') {
-                return (
-                  <div
-                    key={task.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('text/plain', task.id);
-                      setDraggedTaskId(task.id);
-                    }}
-                    onDragEnd={() => setDraggedTaskId(null)}
-                    onClick={() => {
-                      setEditingTask(task);
-                      setTaskModalOpen(true);
-                    }}
-                    className={`px-3 py-2 rounded-xl border transition shadow-2xs flex items-center justify-between gap-2.5 cursor-pointer select-none ${
-                      isDone
-                        ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-60'
-                        : task.habit_id
-                        ? 'bg-purple-50/20 dark:bg-purple-950/20 border-purple-200/90 dark:border-purple-800/80 hover:border-purple-400'
-                        : 'bg-white dark:bg-stone-800 border-stone-200/90 dark:border-stone-700/80 hover:border-indigo-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleScoreTask(task.id, 'up');
-                        }}
-                        className="text-stone-400 hover:text-indigo-600 shrink-0"
-                        title={isDone ? 'Mark incomplete' : 'Mark complete'}
-                      >
-                        {isDone ? (
-                          <CheckCircle2 className="w-4 h-4 text-indigo-600" />
-                        ) : (
-                          <Circle className="w-4 h-4" />
-                        )}
-                      </button>
-                      {task.habit_id && (
-                        <span className="text-[10px] text-purple-600 dark:text-purple-400 shrink-0 font-bold" title={t.habitActionBadge || "Tasca d'hàbit"}>
-                          🔁
-                        </span>
-                      )}
-                      <span className={`text-xs font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>
-                        {task.title}
-                      </span>
-                      {isTaskStale(task) && (
-                        <span className="text-[10px] text-purple-600 dark:text-purple-400 font-mono shrink-0" title="Stale task (>7 days)">
-                          ⏳
-                        </span>
-                      )}
-                      {task.scheduled_start && (
-                        <span className="text-[10px] text-indigo-600 font-mono font-medium flex items-center gap-0.5 shrink-0">
-                          <Clock className="w-3 h-3" />
-                          {task.scheduled_start}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => handlePushTaskToTomorrow(task.id)}
-                        className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200"
-                        title="Push to tomorrow"
-                      >
-                        ⏩
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGoblinTask(task);
-                          setGoblinModalOpen(true);
-                        }}
-                        className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200"
-                        title="Goblin Brain Starter Steps"
-                      >
-                        👺
-                      </button>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
-                        {task.difficulty === 'trivial' ? 'XS' : task.difficulty === 'easy' ? 'S' : task.difficulty === 'medium' ? 'M' : 'L'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  key={task.id}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', task.id);
-                    setDraggedTaskId(task.id);
-                  }}
-                  onDragEnd={() => setDraggedTaskId(null)}
-                  className={`p-3 rounded-xl border transition shadow-2xs cursor-grab active:cursor-grabbing ${
-                    isDone
-                      ? 'bg-stone-50/70 border-stone-200/80 text-stone-400 opacity-70'
-                      : task.habit_id
-                      ? 'bg-purple-50/20 border-purple-200/90 hover:border-purple-300'
-                      : 'bg-white border-stone-200/90 hover:border-stone-300'
-                  }`}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <button
-                      onClick={() => handleScoreTask(task.id, 'up')}
-                      className="mt-0.5 text-stone-400 hover:text-indigo-600 shrink-0"
-                      title={isDone ? 'Mark incomplete' : 'Mark complete'}
-                    >
-                      {isDone ? (
-                        <CheckCircle2 className="w-4 h-4 text-indigo-600" />
-                      ) : (
-                        <Circle className="w-4 h-4" />
-                      )}
-                    </button>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-1">
-                        <span
-                          onClick={() => {
-                            setEditingTask(task);
-                            setTaskModalOpen(true);
-                          }}
-                          className={`font-semibold text-xs cursor-pointer hover:text-indigo-600 truncate ${
-                            isDone ? 'line-through text-stone-400' : 'text-stone-800'
-                          }`}
-                        >
-                          {task.title}
-                        </span>
-
-                        <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 ${
-                            task.difficulty === 'hard'
-                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                              : task.difficulty === 'medium'
-                              ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                              : task.difficulty === 'trivial'
-                              ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
-                              : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                          }`}
-                          title={
-                            task.difficulty === 'trivial'
-                              ? 'XS (5–15m)'
-                              : task.difficulty === 'medium'
-                              ? 'M (30–60m)'
-                              : task.difficulty === 'hard'
-                              ? 'L (60m+)'
-                              : 'S (15–30m)'
-                          }
-                        >
-                          {task.difficulty === 'trivial' ? 'XS' : task.difficulty === 'easy' ? 'S' : task.difficulty === 'medium' ? 'M' : 'L'}
-                        </span>
-                      </div>
-
-                      {/* Project Tag */}
-                      {task.project_name && (
-                        <div className="mt-1">
-                          <span
-                            className="px-1.5 py-0.2 rounded text-[9px] font-medium border"
-                            style={{
-                              backgroundColor: `${task.project_color || '#6366f1'}15`,
-                              color: task.project_color || '#6366f1',
-                              borderColor: `${task.project_color || '#6366f1'}30`,
-                            }}
-                          >
-                            ● {task.project_name}
-                          </span>
-                        </div>
-                      )}
-
-                      {task.notes && (
-                        <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
-                          {task.notes}
-                        </p>
-                      )}
-
-                      {/* Habit Action Indicator */}
-                      {task.habit_id && (() => {
-                        const parentHabit = tasks.find((h) => h.id === task.habit_id);
-                        return (
-                          <div className="mt-1 flex items-center justify-between gap-1 text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800 font-medium">
-                            <div className="flex items-center gap-1 truncate">
-                              <span>🔁</span>
-                              <span className="font-semibold">{t.habitActionBadge || "Tasca d'hàbit"}:</span>
-                              <span className="truncate">{parentHabit ? parentHabit.title : ''}</span>
-                            </div>
-                            {parentHabit && (parentHabit.streak !== undefined || parentHabit.counter_up !== undefined) && (
-                              <span className="shrink-0 text-amber-600 dark:text-amber-400 font-bold">
-                                🔥 {parentHabit.streak || parentHabit.counter_up || 0}d
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Habit Stacking Cue Pill */}
-                      {task.anchor_habit_title && (
-                        <div className="mt-1 flex items-center gap-1 text-[10px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-800/60 font-medium">
-                          <span>🔗</span>
-                          <span>After: {task.anchor_habit_title}</span>
-                        </div>
-                      )}
-
-                      {/* Micro-Habit Starter Step Chip with 1-Tap Floor Completion */}
-                      {task.micro_habit_title && (
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!isDone) {
-                              handleScoreTask(task.id, 'up');
-                              setMindfulReflection('🌱 Starter step logged! You maintained your momentum on a low-spoon day.');
-                              if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
-                              reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
-                            }
-                          }}
-                          className={`mt-1 inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-md border font-medium transition cursor-pointer select-none ${
-                            isDone
-                              ? 'bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
-                              : 'bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700 active:scale-95'
-                          }`}
-                          title={isDone ? 'Starter step completed' : 'Tap to complete starter step (< 30s)'}
-                        >
-                          <span>🌱</span>
-                          <span className="font-semibold">Starter Step:</span>
-                          <span className={isDone ? 'line-through text-stone-500' : ''}>{task.micro_habit_title}</span>
-                          {!isDone && (
-                            <span className="ml-1 text-[9px] bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.2 rounded font-bold shadow-2xs">
-                              Do Now
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Compassionate Stale Backlog Triage Badge */}
-                      {isTaskStale(task) && (
-                        <div className="mt-1 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          <span className="text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800/60 font-medium inline-flex items-center gap-1">
-                            <span>⏳</span>
-                            <span>Stale (7d+)</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const futureDate = new Date();
-                              futureDate.setDate(futureDate.getDate() + 30);
-                              handleScheduleTask(task.id, futureDate.toISOString().slice(0, 10));
-                              setMindfulReflection('🧺 Task rested to Someday. Zero guilt!');
-                              if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
-                              reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
-                            }}
-                            className="text-[10px] text-stone-600 dark:text-stone-400 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/60 px-1.5 py-0.5 rounded border border-stone-200 dark:border-stone-700 transition cursor-pointer"
-                            title="Rest task to Someday (+30 days)"
-                          >
-                            <span>Rest to Someday</span>
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Timeline Date & Scheduling Controls */}
-                      <div className="flex flex-wrap items-center justify-between gap-1.5 mt-2 pt-1 border-t border-stone-100 text-[10px]">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {task.due_date ? (
-                            <span
-                              className={`flex items-center gap-1 font-medium px-1.5 py-0.5 rounded border font-mono ${
-                                isDueToday
-                                  ? 'text-indigo-700 bg-indigo-50 border-indigo-200 font-semibold'
-                                  : 'text-amber-700 bg-amber-50 border-amber-200'
-                              }`}
-                            >
-                              <Calendar className="w-3 h-3 text-amber-600" />
-                              {isDueToday ? t.taskBtnToday : `${t.duePrefix} ${task.due_date}`}
-                            </span>
-                          ) : (
-                            <span className="text-stone-400 italic">{t.noTimeline}</span>
-                          )}
-
-                          {task.scheduled_start && (
-                            <span className="flex items-center gap-1 font-medium text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 font-mono">
-                              <Clock className="w-3 h-3 text-indigo-600" />
-                              {task.scheduled_start}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Action buttons: "For Today" and "Add to Agenda" */}
-                        <div className="flex items-center gap-1">
-                          {!isDueToday && (
-                            <button
-                              onClick={() => handleMarkTaskForToday(task.id)}
-                              className="text-[10px] text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded font-medium transition"
-                              title="Set due date to today so it can be scheduled on the agenda"
-                            >
-                              {t.plusTodayBtn}
-                            </button>
-                          )}
-
-                          {isDueToday && !task.scheduled_start && (
-                            <button
-                              onClick={() => handleQuickScheduleTodayToAgenda(task.id)}
-                              className="text-[10px] text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded font-medium transition flex items-center gap-0.5"
-                              title="Place onto today's agenda time grid"
-                            >
-                              <Clock className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>{t.taskBtnAgenda}</span>
-                            </button>
-                          )}
-
-                          {/* 1-Tap Defer to Tomorrow */}
-                          <button
-                            type="button"
-                            onClick={() => handlePushTaskToTomorrow(task.id)}
-                            className="text-[10px] text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
-                            title="Gently push task to tomorrow"
-                          >
-                            <span>⏩</span>
-                            <span className="hidden sm:inline">Tomorrow</span>
-                          </button>
-
-                          {/* Goblin Brain Demolisher */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setGoblinTask(task);
-                              setGoblinModalOpen(true);
-                            }}
-                            className="text-[10px] text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded font-medium transition flex items-center gap-0.5"
-                            title="Goblin Brain: Demolish this task into micro starter steps"
-                          >
-                            <span>👺</span>
-                            <span className="hidden sm:inline">Goblin</span>
-                          </button>
-
-                          {hasDeadline && (
-                            <button
-                              onClick={() => handleSetTaskDate(task.id, null)}
-                              className="text-[10px] text-stone-400 hover:text-stone-700 px-1.5 py-0.5 rounded hover:bg-stone-100"
-                              title="Return to Without Timeline backlog"
-                            >
-                              {t.taskBtnClear}
-                            </button>
-                          )}
-                          <GripVertical className="w-3.5 h-3.5 text-stone-400 shrink-0 cursor-grab" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Checklist subtasks */}
-                  {task.subtasks && task.subtasks.length > 0 && (
-                    <div className="pl-6 space-y-1 pt-1.5 mt-1 border-t border-stone-100">
-                      {task.subtasks.map((sub) => (
-                        <div
-                          key={sub.id}
-                          onClick={() => handleToggleSubtask(task.id, sub.id, sub.completed)}
-                          className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer hover:text-stone-900"
-                        >
-                          {sub.completed ? (
-                            <CheckSquare className="w-3 h-3 text-indigo-600 shrink-0" />
-                          ) : (
-                            <div className="w-3 h-3 border border-stone-300 rounded-xs shrink-0" />
-                          )}
-                          <span className={sub.completed ? 'line-through text-stone-400' : ''}>
-                            {sub.title}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-    );
-  }
 };
