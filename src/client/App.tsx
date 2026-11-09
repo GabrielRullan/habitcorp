@@ -2983,14 +2983,6 @@ export const App: React.FC = () => {
                 </div>
               );
             })}
-
-            <button
-              onClick={() => setProjectModalOpen(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium border border-dashed border-stone-300 text-stone-500 hover:text-indigo-600 hover:border-indigo-300 bg-white hover:bg-indigo-50/40 text-xs transition shrink-0"
-            >
-              <Plus className="w-3 h-3" />
-              <span>{t.newProjectBtn}</span>
-            </button>
           </div>
 
           <button
