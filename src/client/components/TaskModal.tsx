@@ -92,10 +92,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Simplified choice: 'habit' (recurring) or 'task' (to-do)
-  const [kind, setKind] = useState<'habit' | 'task'>(
-    defaultType === 'habit' || defaultType === 'daily' ? 'habit' : 'task'
-  );
+  // 3-way taxonomy choice: 'habit' (+/-), 'daily' (routine checklist), or 'task' (to-do)
+  const [kind, setKind] = useState<'habit' | 'daily' | 'task'>(() => {
+    if (defaultType === 'habit') return 'habit';
+    if (defaultType === 'daily') return 'daily';
+    return 'task';
+  });
 
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
@@ -145,8 +147,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   useEffect(() => {
     if (initialTask) {
-      const isHabit = initialTask.type === 'habit' || initialTask.type === 'daily';
-      setKind(isHabit ? 'habit' : 'task');
+      if (initialTask.type === 'habit') {
+        setKind('habit');
+      } else if (initialTask.type === 'daily') {
+        setKind('daily');
+      } else {
+        setKind('task');
+      }
       setTitle(initialTask.title);
       setNotes(initialTask.notes || '');
       setDifficulty(initialTask.difficulty);
@@ -202,7 +209,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
       setSubtasks(initialTask.subtasks || []);
     } else {
-      setKind(defaultType === 'habit' || defaultType === 'daily' ? 'habit' : 'task');
+      setKind(defaultType === 'habit' ? 'habit' : defaultType === 'daily' ? 'daily' : 'task');
       setTitle('');
       setNotes('');
       setDifficulty('easy');
@@ -302,28 +309,44 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     };
 
     if (kind === 'habit') {
-      if (periodicity === 'counter_only') {
-        payload.type = 'habit';
-        payload.habit_positive = habitPositive;
-        payload.habit_negative = habitNegative;
-        payload.habit_reset_period = 'daily';
-      } else {
-        payload.type = 'daily';
-        payload.habit_positive = habitPositive;
-        payload.habit_negative = habitNegative;
-        if (periodicity === 'daily') {
-          payload.frequency = 'daily';
-          payload.repeat_days = [0, 1, 2, 3, 4, 5, 6];
-        } else if (periodicity === 'weekdays') {
-          payload.frequency = 'weekly';
-          payload.repeat_days = [1, 2, 3, 4, 5];
-        } else if (periodicity === 'custom_days') {
-          payload.frequency = 'weekly';
-          payload.repeat_days = repeatDays;
-        }
-      }
+      payload.type = 'habit';
+      payload.habit_positive = habitPositive;
+      payload.habit_negative = habitNegative;
+      payload.habit_reset_period = 'daily';
 
       // Agenda Time-Blocking for habits without converting to tasks
+      if (enableAgenda && scheduledDate) {
+        payload.scheduled_date = scheduledDate;
+        payload.scheduled_start = scheduledStart;
+        payload.scheduled_duration = scheduledDuration;
+      } else {
+        payload.scheduled_date = null;
+        payload.scheduled_start = null;
+      }
+
+      // Habit Stacking (BJ Fogg Cue Anchoring)
+      payload.anchor_task_id = anchorTaskId || null;
+      payload.anchor_habit_title = anchorHabitTitle.trim() || '';
+      payload.micro_habit_title = microHabitTitle.trim() || '';
+    } else if (kind === 'daily') {
+      payload.type = 'daily';
+      payload.habit_positive = habitPositive;
+      payload.habit_negative = habitNegative;
+      if (periodicity === 'daily') {
+        payload.frequency = 'daily';
+        payload.repeat_days = [0, 1, 2, 3, 4, 5, 6];
+      } else if (periodicity === 'weekdays') {
+        payload.frequency = 'weekly';
+        payload.repeat_days = [1, 2, 3, 4, 5];
+      } else if (periodicity === 'custom_days') {
+        payload.frequency = 'weekly';
+        payload.repeat_days = repeatDays;
+      } else {
+        payload.frequency = 'daily';
+        payload.repeat_days = [0, 1, 2, 3, 4, 5, 6];
+      }
+
+      // Agenda Time-Blocking for dailies
       if (enableAgenda && scheduledDate) {
         payload.scheduled_date = scheduledDate;
         payload.scheduled_start = scheduledStart;
@@ -386,30 +409,41 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
-          {/* Simple Habit vs Task Pill Tabs */}
+          {/* 3-Way Taxonomy: Habit (+/-), Daily / Routine, Task (To-Do) */}
           <div>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-stone-100 rounded-xl">
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-stone-100 dark:bg-stone-800 rounded-xl">
               <button
                 type="button"
                 onClick={() => setKind('habit')}
-                className={`py-2 px-3 rounded-lg text-xs font-semibold transition ${
+                className={`py-2 px-2.5 rounded-lg text-xs font-semibold transition text-center ${
                   kind === 'habit'
-                    ? 'bg-white text-emerald-800 shadow-xs border border-stone-200/80'
-                    : 'text-stone-500 hover:text-stone-800'
+                    ? 'bg-white dark:bg-stone-700 text-emerald-800 dark:text-emerald-300 shadow-xs border border-stone-200/80'
+                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
                 }`}
               >
-                {t.itemTabHabit}
+                {t.columnHabits || 'Hàbits (+/-)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setKind('daily')}
+                className={`py-2 px-2.5 rounded-lg text-xs font-semibold transition text-center ${
+                  kind === 'daily'
+                    ? 'bg-white dark:bg-stone-700 text-teal-800 dark:text-teal-300 shadow-xs border border-stone-200/80'
+                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                }`}
+              >
+                {t.itemTabDaily || 'Rutines'}
               </button>
               <button
                 type="button"
                 onClick={() => setKind('task')}
-                className={`py-2 px-3 rounded-lg text-xs font-semibold transition ${
+                className={`py-2 px-2.5 rounded-lg text-xs font-semibold transition text-center ${
                   kind === 'task'
-                    ? 'bg-white text-indigo-800 shadow-xs border border-stone-200/80'
-                    : 'text-stone-500 hover:text-stone-800'
+                    ? 'bg-white dark:bg-stone-700 text-indigo-800 dark:text-indigo-300 shadow-xs border border-stone-200/80'
+                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
                 }`}
               >
-                {t.itemTabTask}
+                {t.itemTabTask || 'Tasques'}
               </button>
             </div>
           </div>
@@ -422,7 +456,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={kind === 'habit' ? t.itemTitlePlaceholderHabit : t.itemTitlePlaceholderTask}
+              placeholder={
+                kind === 'habit'
+                  ? t.itemTitlePlaceholderHabit
+                  : kind === 'daily'
+                  ? (t.itemTypeDaily ? `${t.itemTypeDaily} (ex. Prendre medicació o Standup 10:00)` : 'p. ex. Prendre medicació o Standup 10:00')
+                  : t.itemTitlePlaceholderTask
+              }
               className="w-full bg-white border border-stone-300 rounded-xl px-3.5 py-2 text-sm text-stone-800 placeholder-stone-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />
 
@@ -660,79 +700,29 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
           </div>
 
-          {/* KIND: HABIT SPECIFIC */}
+          {/* KIND: HABIT SPECIFIC (+/-) */}
           {kind === 'habit' && (
             <div className="p-4 bg-emerald-50/40 border border-emerald-100 rounded-xl space-y-3">
-              <label className="block text-xs font-semibold text-emerald-900">{t.periodicityTitle}</label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {[
-                  { id: 'daily', label: t.periodEveryDay },
-                  { id: 'weekdays', label: t.periodWeekdays },
-                  { id: 'custom_days', label: t.periodSpecificDays },
-                  { id: 'counter_only', label: t.periodFlexibleCounter },
-                ].map((opt) => (
-                  <button
-                    type="button"
-                    key={opt.id}
-                    onClick={() => setPeriodicity(opt.id as any)}
-                    className={`py-1.5 px-2.5 rounded-lg border text-left font-medium transition ${
-                      periodicity === opt.id
-                        ? 'bg-white border-emerald-400 text-emerald-900 shadow-xs'
-                        : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {periodicity === 'custom_days' && (
-                <div className="pt-2">
-                  <div className="flex gap-1">
-                    {(t.weekdaysShort || WEEKDAYS).map((wd) => {
-                      const active = repeatDays.includes(wd.value);
-                      return (
-                        <button
-                          type="button"
-                          key={wd.value}
-                          onClick={() => toggleWeekday(wd.value)}
-                          className={`flex-1 py-1 rounded-md text-xs font-semibold border text-center transition ${
-                            active
-                              ? 'bg-emerald-600 border-emerald-600 text-white'
-                              : 'bg-white border-stone-200 text-stone-500 hover:border-emerald-300'
-                          }`}
-                        >
-                          {wd.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Optional +/- Counter Buttons */}
-              <div className="pt-2 border-t border-emerald-200/50 flex items-center justify-between">
-                <span className="text-xs text-stone-600 font-medium">{t.counterButtonsLabel}</span>
-                <div className="flex gap-3">
-                  <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={habitPositive}
-                      onChange={(e) => setHabitPositive(e.target.checked)}
-                      className="rounded border-stone-300 text-emerald-600 focus:ring-0"
-                    />
-                    <span>{t.counterPositive}</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={habitNegative}
-                      onChange={(e) => setHabitNegative(e.target.checked)}
-                      className="rounded border-stone-300 text-rose-600 focus:ring-0"
-                    />
-                    <span>{t.counterNegative}</span>
-                  </label>
-                </div>
+              <label className="block text-xs font-semibold text-emerald-900">{t.counterButtonsLabel || 'Botons de comptador (+ / -)'}</label>
+              <div className="flex gap-4 p-3 bg-white rounded-lg border border-emerald-200/60">
+                <label className="flex items-center gap-2 text-xs text-stone-700 cursor-pointer font-medium">
+                  <input
+                    type="checkbox"
+                    checked={habitPositive}
+                    onChange={(e) => setHabitPositive(e.target.checked)}
+                    className="rounded border-stone-300 text-emerald-600 focus:ring-0 w-4 h-4"
+                  />
+                  <span>➕ {t.counterPositive || 'Comptador Positiu (+)'}</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-stone-700 cursor-pointer font-medium">
+                  <input
+                    type="checkbox"
+                    checked={habitNegative}
+                    onChange={(e) => setHabitNegative(e.target.checked)}
+                    className="rounded border-stone-300 text-rose-600 focus:ring-0 w-4 h-4"
+                  />
+                  <span>➖ {t.counterNegative || 'Comptador Negatiu (-)'}</span>
+                </label>
               </div>
 
               {/* Unlocked Agenda Time-Blocking for Habits */}
@@ -798,6 +788,127 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* KIND: DAILY / ROUTINE SPECIFIC */}
+          {kind === 'daily' && (
+            <div className="p-4 bg-teal-50/40 border border-teal-100 rounded-xl space-y-3">
+              <label className="block text-xs font-semibold text-teal-900">{t.periodicityTitle}</label>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                {[
+                  { id: 'daily', label: t.periodEveryDay },
+                  { id: 'weekdays', label: t.periodWeekdays },
+                  { id: 'custom_days', label: t.periodSpecificDays },
+                ].map((opt) => (
+                  <button
+                    type="button"
+                    key={opt.id}
+                    onClick={() => setPeriodicity(opt.id as any)}
+                    className={`py-1.5 px-2.5 rounded-lg border text-center font-medium transition ${
+                      periodicity === opt.id
+                        ? 'bg-white border-teal-400 text-teal-900 shadow-xs font-semibold'
+                        : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {periodicity === 'custom_days' && (
+                <div className="pt-2">
+                  <div className="flex gap-1">
+                    {(t.weekdaysShort || WEEKDAYS).map((wd) => {
+                      const active = repeatDays.includes(wd.value);
+                      return (
+                        <button
+                          type="button"
+                          key={wd.value}
+                          onClick={() => toggleWeekday(wd.value)}
+                          className={`flex-1 py-1 rounded-md text-xs font-semibold border text-center transition ${
+                            active
+                              ? 'bg-teal-600 border-teal-600 text-white'
+                              : 'bg-white border-stone-200 text-stone-500 hover:border-teal-300'
+                          }`}
+                        >
+                          {wd.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Unlocked Agenda Time-Blocking for Dailies */}
+              <div className="pt-2.5 border-t border-teal-200/50">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableAgenda}
+                    onChange={(e) => {
+                      setEnableAgenda(e.target.checked);
+                      if (e.target.checked && !scheduledDate) {
+                        setScheduledDate(defaultScheduledDate || todayStr);
+                      }
+                    }}
+                    className="rounded border-stone-300 text-teal-600 focus:ring-0"
+                  />
+                  <div className="flex items-center justify-between flex-1">
+                    <span className="text-xs font-semibold text-teal-950 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-teal-700" />
+                      <span>{t.blockAgendaSlotLabel}</span>
+                    </span>
+                    <span className="text-[10px] text-teal-700 font-medium bg-teal-100/70 px-2 py-0.5 rounded-md">
+                      {t.routineSlotBadge}
+                    </span>
+                  </div>
+                </label>
+
+                {enableAgenda && (
+                  <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-teal-100">
+                    <div>
+                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">{t.labelDate}</label>
+                      <input
+                        type="date"
+                        value={scheduledDate || todayStr}
+                        onChange={(e) => setScheduledDate(e.target.value)}
+                        className="w-full bg-white border border-stone-300 rounded-lg px-2 py-1 text-xs text-stone-800 focus:outline-none focus:border-teal-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">{t.labelStartTime}</label>
+                      <input
+                        type="time"
+                        value={scheduledStart}
+                        onChange={(e) => setScheduledStart(e.target.value)}
+                        className="w-full bg-white border border-stone-300 rounded-lg px-2 py-1 text-xs text-stone-800 focus:outline-none focus:border-teal-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-stone-600 font-medium mb-0.5">{t.labelDuration}</label>
+                      <select
+                        value={scheduledDuration}
+                        onChange={(e) => setScheduledDuration(Number(e.target.value))}
+                        className="w-full bg-white border border-stone-300 rounded-lg px-2 py-1 text-xs text-stone-800 focus:outline-none focus:border-teal-500"
+                      >
+                        <option value={15}>15m</option>
+                        <option value={30}>30m</option>
+                        <option value={45}>45m</option>
+                        <option value={60}>1h</option>
+                        <option value={90}>1.5h</option>
+                        <option value={120}>2h</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Habit Stacking & Micro-Habit (Applies to Habits and Dailies) */}
+          {(kind === 'habit' || kind === 'daily') && (
+            <div className="p-4 bg-emerald-50/30 border border-emerald-100 rounded-xl space-y-3">
 
               {/* Habit Stacking (BJ Fogg Cue Anchoring: "After [Anchor], I will [Routine]") */}
               <div className="pt-2.5 border-t border-emerald-200/50 space-y-2">

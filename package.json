@@ -9,7 +9,9 @@
     "dev:client": "vite",
     "build": "vite build",
     "start": "NODE_ENV=production tsx src/server/index.ts",
-    "test": "vitest run --fileParallelism=false"
+    "test": "vitest run --fileParallelism=false",
+    "check:deployment": "node scripts/check_deployment.js",
+    "deploy:hosting": "npm run build && npx firebase deploy --only hosting && node scripts/check_deployment.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

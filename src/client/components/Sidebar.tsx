@@ -13,12 +13,16 @@ import {
   LogOut,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
+  Folder,
+  Plus,
   Sparkles,
   Settings,
 } from 'lucide-react';
 import { useTranslation } from '../i18n/I18nContext';
 import { LanguagePicker } from './LanguagePicker';
 import { HabitCorpIcon } from './HabitCorpIcon';
+import { Project, Task } from '../types';
 
 export interface SidebarProps {
   onOpenGoblin: () => void;
@@ -40,6 +44,11 @@ export interface SidebarProps {
   onLogout: () => void;
   zenMode?: boolean;
   onToggleZenMode?: () => void;
+  projects?: Project[];
+  selectedProjectId?: string | 'all';
+  onSelectProject?: (id: string | 'all') => void;
+  onOpenNewProject?: () => void;
+  tasks?: Task[];
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -62,10 +71,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   zenMode,
   onToggleZenMode,
+  projects = [],
+  selectedProjectId = 'all',
+  onSelectProject,
+  onOpenNewProject,
+  tasks = [],
 }) => {
   const { t } = useTranslation();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Collapsible sections state with localStorage persistence
+  const [sectionsOpen, setSectionsOpen] = useState({
+    actions: true,
+    projects: true,
+    tools: true,
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('habitcorp_sidebar_sections');
+      if (saved) {
+        setSectionsOpen((prev) => ({ ...prev, ...JSON.parse(saved) }));
+      }
+    } catch {}
+  }, []);
+
+  const toggleSection = (key: 'actions' | 'projects' | 'tools') => {
+    setSectionsOpen((prev) => {
+      const updated = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem('habitcorp_sidebar_sections', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
 
   // Close user dropdown menu when clicking outside
   useEffect(() => {
@@ -106,10 +146,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 text-xs">
         {/* Action Triggers Section */}
         <div>
-          <div className="px-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500">
-            Action Triggers
+          <div className="flex items-center justify-between px-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500">
+            <button
+              type="button"
+              onClick={() => toggleSection('actions')}
+              className="flex items-center gap-1 hover:text-stone-700 dark:hover:text-stone-300 transition cursor-pointer select-none"
+              aria-expanded={sectionsOpen.actions}
+              aria-label="Toggle Action Triggers Section"
+            >
+              <ChevronRight
+                className={`w-3 h-3 transition-transform duration-200 ${
+                  sectionsOpen.actions ? 'rotate-90' : 'rotate-0'
+                }`}
+              />
+              <span>Action Triggers</span>
+            </button>
           </div>
-          <div className="space-y-1.5">
+          <div className={sectionsOpen.actions ? 'space-y-1.5' : 'hidden'}>
             {/* Goblin Brain Trigger */}
             <button
               type="button"
@@ -147,12 +200,121 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
+        {/* Projects Section */}
+        <div>
+          <div className="flex items-center justify-between px-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500">
+            <button
+              type="button"
+              onClick={() => toggleSection('projects')}
+              className="flex items-center gap-1 hover:text-stone-700 dark:hover:text-stone-300 transition cursor-pointer select-none"
+              aria-expanded={sectionsOpen.projects}
+              aria-label="Toggle Projects Section"
+            >
+              <ChevronRight
+                className={`w-3 h-3 transition-transform duration-200 ${
+                  sectionsOpen.projects ? 'rotate-90' : 'rotate-0'
+                }`}
+              />
+              <span>{t.projectsLabel ? t.projectsLabel.replace(/[:：]/g, '') : 'Projects'}</span>
+              {!sectionsOpen.projects && projects.length > 0 && (
+                <span className="text-[9px] font-normal lowercase opacity-75">({projects.length})</span>
+              )}
+            </button>
+            {onOpenNewProject && (
+              <button
+                type="button"
+                onClick={onOpenNewProject}
+                className="p-1 rounded-md hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 transition cursor-pointer text-stone-400"
+                title={t.newProjectBtn || 'New Project'}
+                aria-label="Create New Project"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <div className={sectionsOpen.projects ? 'space-y-1' : 'hidden'}>
+            {/* All Projects / All Tasks Option */}
+            <button
+              type="button"
+              onClick={() => onSelectProject?.('all')}
+              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl font-medium transition text-left cursor-pointer ${
+                selectedProjectId === 'all'
+                  ? 'bg-stone-100 dark:bg-stone-800 text-stone-900 dark:text-stone-100 font-semibold shadow-2xs'
+                  : 'text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800/60'
+              }`}
+              aria-label="All Projects"
+              aria-pressed={selectedProjectId === 'all'}
+            >
+              <Folder className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+              <span className="flex-1 truncate">{t.filterAll || 'All Tasks'}</span>
+              <span className="text-[10px] font-mono opacity-70">
+                {tasks.length}
+              </span>
+            </button>
+
+            {/* Project List */}
+            {projects.length > 0 ? (
+              projects.map((p) => {
+                const isSelected = selectedProjectId === p.id;
+                const count = tasks.filter((t) => t.project_id === p.id).length;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onSelectProject?.(isSelected ? 'all' : p.id)}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl font-medium transition text-left cursor-pointer ${
+                      isSelected
+                        ? 'font-semibold shadow-2xs'
+                        : 'text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800/60'
+                    }`}
+                    style={
+                      isSelected
+                        ? {
+                            backgroundColor: `${p.color}18`,
+                            borderColor: `${p.color}40`,
+                            color: p.color,
+                          }
+                        : undefined
+                    }
+                    aria-label={`Project ${p.name}`}
+                    aria-pressed={isSelected}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: p.color }}
+                    />
+                    <span className="flex-1 truncate">{p.name}</span>
+                    <span className="text-[10px] font-mono opacity-70">({count})</span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="px-2.5 py-1 text-[11px] text-stone-400 dark:text-stone-500 italic">
+                No projects yet
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Tools Section */}
         <div>
-          <div className="px-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500">
-            Tools
+          <div className="flex items-center justify-between px-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500">
+            <button
+              type="button"
+              onClick={() => toggleSection('tools')}
+              className="flex items-center gap-1 hover:text-stone-700 dark:hover:text-stone-300 transition cursor-pointer select-none"
+              aria-expanded={sectionsOpen.tools}
+              aria-label="Toggle Tools Section"
+            >
+              <ChevronRight
+                className={`w-3 h-3 transition-transform duration-200 ${
+                  sectionsOpen.tools ? 'rotate-90' : 'rotate-0'
+                }`}
+              />
+              <span>Tools</span>
+            </button>
           </div>
-          <div className="space-y-1">
+          <div className={sectionsOpen.tools ? 'space-y-1' : 'hidden'}>
             {/* Pomodoro */}
             <button
               type="button"

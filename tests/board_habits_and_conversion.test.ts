@@ -25,9 +25,9 @@ describe('Board Habits & Habit-to-Task Conversion Suite', () => {
       expect(dict.habitActionCreatedToast).toBeDefined();
     });
 
-    expect(translations.ca.convertHabitToTodayTask).toBe("+ Acció d'avui");
-    expect(translations.es.convertHabitToTodayTask).toBe('+ Acción de hoy');
-    expect(translations.en.convertHabitToTodayTask).toBe("+ Today's Action");
+    expect(translations.ca.convertHabitToTodayTask).toBe("Tasca avui");
+    expect(translations.es.convertHabitToTodayTask).toBe('Tarea hoy');
+    expect(translations.en.convertHabitToTodayTask).toBe("Today's Task");
   });
 
   it('correctly creates an action task payload linked to the parent habit', () => {

@@ -35,6 +35,7 @@ import {
   Trash2,
   Repeat,
   Lock,
+  GripVertical,
 } from 'lucide-react';
 
 const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -125,7 +126,7 @@ interface AgendaViewProps {
   onUnscheduleTask: (taskId: string) => void;
   onEditMeeting?: (meeting: CalendarMeeting) => void;
   onDeleteMeeting?: (meetingId: string) => void;
-  onRescheduleMeeting?: (meetingId: string, date: string, startHour: number) => void;
+  onRescheduleMeeting?: (meetingId: string, date: string, startHour: number, startMinute?: number) => void;
 }
 
 const HOURS = Array.from({ length: 17 }, (_, i) => i + 6); // 06:00 to 22:00
@@ -236,6 +237,74 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const [drawerTab, setDrawerTab] = useState<'all' | 'habits' | 'tasks'>('all');
   const [drawerTimeFilter, setDrawerTimeFilter] = useState<'all' | 'morning' | 'workday' | 'evening'>('all');
   const [slotPicker, setSlotPicker] = useState<{ date: string; hour: number } | null>(null);
+
+  // Drag and Drop state for events and tasks
+  const [draggedItem, setDraggedItem] = useState<{
+    type: 'meeting' | 'task';
+    id: string;
+    durationMinutes: number;
+    title: string;
+    color?: string;
+  } | null>(null);
+
+  const [dragOverTarget, setDragOverTarget] = useState<{
+    dateStr: string;
+    hour: number;
+    minute: number;
+  } | null>(null);
+
+  const processDrop = (
+    e: React.DragEvent,
+    targetDate: string,
+    targetHour: number,
+    targetMinute: number
+  ) => {
+    e.preventDefault();
+    const plainData = e.dataTransfer.getData('text/plain') || '';
+    const meetingId =
+      e.dataTransfer.getData('text/meeting-id') ||
+      (plainData.startsWith('meeting:') ? plainData.replace('meeting:', '') : null) ||
+      (draggedItem?.type === 'meeting' ? draggedItem.id : null);
+
+    if (meetingId && onRescheduleMeeting) {
+      onRescheduleMeeting(meetingId, targetDate, targetHour, targetMinute);
+      setDraggedItem(null);
+      setDragOverTarget(null);
+      return;
+    }
+
+    const taskId =
+      e.dataTransfer.getData('text/task-id') ||
+      (!plainData.startsWith('meeting:') && plainData ? plainData : null) ||
+      (draggedItem?.type === 'task' ? draggedItem.id : null);
+
+    if (taskId) {
+      const droppedTask = tasks.find((t) => t.id === taskId);
+      const duration = droppedTask?.scheduled_duration || draggedItem?.durationMinutes || 30;
+      const hh = String(targetHour).padStart(2, '0');
+      const mm = String(targetMinute).padStart(2, '0');
+      onScheduleTask(taskId, targetDate, `${hh}:${mm}`, duration);
+      setDraggedItem(null);
+      setDragOverTarget(null);
+    }
+  };
+
+  const handleSlotDragOver = (e: React.DragEvent, dateStr: string, hour: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    const quarter = Math.min(3, Math.max(0, Math.floor((offsetY / rect.height) * 4)));
+    const minute = quarter * 15;
+    if (
+      !dragOverTarget ||
+      dragOverTarget.dateStr !== dateStr ||
+      dragOverTarget.hour !== hour ||
+      dragOverTarget.minute !== minute
+    ) {
+      setDragOverTarget({ dateStr, hour, minute });
+    }
+  };
 
   // Ghosts visibility controls
   const [showGhosts, setShowGhosts] = useState(true);
@@ -707,6 +776,43 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     key={dateStr}
                     className="relative border-l border-stone-200/50 bg-stone-50/20"
                     style={{ height: `${HOURS.length * HOUR_HEIGHT}px` }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const offsetY = e.clientY - rect.top;
+                      const totalMin = START_HOUR * 60 + (offsetY / (HOURS.length * HOUR_HEIGHT)) * (HOURS.length * 60);
+                      const clampedMin = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - 15, totalMin));
+                      const snappedMin = Math.floor(clampedMin / 15) * 15;
+                      const hour = Math.floor(snappedMin / 60);
+                      const minute = snappedMin % 60;
+                      if (
+                        !dragOverTarget ||
+                        dragOverTarget.dateStr !== dateStr ||
+                        dragOverTarget.hour !== hour ||
+                        dragOverTarget.minute !== minute
+                      ) {
+                        setDragOverTarget({ dateStr, hour, minute });
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const offsetY = e.clientY - rect.top;
+                      const totalMin = START_HOUR * 60 + (offsetY / (HOURS.length * HOUR_HEIGHT)) * (HOURS.length * 60);
+                      const clampedMin = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - 15, totalMin));
+                      const snappedMin = Math.floor(clampedMin / 15) * 15;
+                      const hour = Math.floor(snappedMin / 60);
+                      const minute = snappedMin % 60;
+                      processDrop(e, dateStr, hour, minute);
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        if (dragOverTarget?.dateStr === dateStr) {
+                          setDragOverTarget(null);
+                        }
+                      }
+                    }}
                   >
                     {/* Background Hourly Rows */}
                     {HOURS.map((hour, idx) => {
@@ -718,28 +824,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             top: `${idx * HOUR_HEIGHT}px`,
                             height: `${HOUR_HEIGHT}px`,
                           }}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = 'move';
-                          }}
+                          onDragOver={(e) => handleSlotDragOver(e, dateStr, hour)}
                           onDrop={(e) => {
                             e.preventDefault();
-                            const meetingId = e.dataTransfer.getData('text/meeting-id');
-                            if (meetingId && onRescheduleMeeting) {
-                              onRescheduleMeeting(meetingId, dateStr, hour);
-                              return;
-                            }
-                            const taskId = e.dataTransfer.getData('text/plain');
-                            if (taskId) {
-                              const droppedTask = tasks.find((t) => t.id === taskId);
-                              const duration = droppedTask?.scheduled_duration || 30;
-                              onScheduleTask(
-                                taskId,
-                                dateStr,
-                                `${String(hour).padStart(2, '0')}:00`,
-                                duration
-                              );
-                            }
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const offsetY = e.clientY - rect.top;
+                            const quarter = Math.min(3, Math.max(0, Math.floor((offsetY / rect.height) * 4)));
+                            const minute = quarter * 15;
+                            processDrop(e, dateStr, hour, minute);
                           }}
                           onClick={() => {
                             if (!occupied) {
@@ -762,6 +854,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         </div>
                       );
                     })}
+
+                    {/* Drag & Drop Visual Drop Ghost Preview */}
+                    {dragOverTarget && dragOverTarget.dateStr === dateStr && (
+                      <div
+                        style={{
+                          top: `${((dragOverTarget.hour * 60 + dragOverTarget.minute - START_HOUR * 60) / 60) * HOUR_HEIGHT}px`,
+                          height: `${((draggedItem?.durationMinutes || 30) / 60) * HOUR_HEIGHT}px`,
+                        }}
+                        className="absolute z-20 left-1 right-1 rounded-lg border-2 border-dashed border-indigo-500 bg-indigo-100/80 dark:bg-indigo-950/75 pointer-events-none flex items-center justify-between px-2 text-xs font-semibold text-indigo-900 dark:text-indigo-200 shadow-md backdrop-blur-2xs transition-all"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0 animate-spin" style={{ animationDuration: '4s' }} />
+                          <span className="truncate">{draggedItem?.title || 'Moure a aquesta hora'}</span>
+                        </div>
+                        <span className="font-mono text-[10px] bg-indigo-200/90 dark:bg-indigo-900/90 px-1.5 py-0.5 rounded text-indigo-900 dark:text-indigo-100 shrink-0 font-bold ml-1">
+                          {String(dragOverTarget.hour).padStart(2, '0')}:{String(dragOverTarget.minute).padStart(2, '0')}
+                        </span>
+                      </div>
+                    )}
 
                     {/* Current-Time "Now" Indicator Line (ADHD Time-Blindness Relief) */}
                     {showNowIndicator && (
@@ -797,6 +908,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         const recurrenceLabel = getRecurrenceLabel(m, t);
                         const isExternalSynced = Boolean(m.source_id);
                         const isShort = heightPx < 45;
+                        const isDraggingThis = draggedItem?.id === m.id;
+                        const isOtherDragging = draggedItem !== null && !isDraggingThis;
 
                         if (m.is_ghost) {
                           return (
@@ -805,8 +918,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                               draggable={!isExternalSynced}
                               onDragStart={(e) => {
                                 if (isExternalSynced) return;
+                                const durationMin = Math.max(15, p.endMin - p.startMin);
+                                setDraggedItem({ type: 'meeting', id: m.id, durationMinutes: durationMin, title: m.title, color: m.color });
                                 e.dataTransfer.setData('text/meeting-id', m.id);
+                                e.dataTransfer.setData('text/plain', `meeting:${m.id}`);
                                 e.dataTransfer.effectAllowed = 'move';
+                              }}
+                              onDragEnd={() => {
+                                setDraggedItem(null);
+                                setDragOverTarget(null);
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -820,8 +940,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                 borderColor: m.color || '#f472b6',
                               }}
                               className={`absolute z-10 p-1.5 rounded-lg text-xs border border-dashed bg-pink-50/90 text-pink-950 shadow-2xs overflow-hidden transition group/event ${
-                                isExternalSynced ? 'cursor-default' : 'cursor-pointer hover:border-pink-500 hover:shadow-xs'
-                              }`}
+                                isExternalSynced ? 'cursor-default' : 'cursor-grab active:cursor-grabbing hover:border-pink-500 hover:shadow-xs'
+                              } ${isDraggingThis ? 'opacity-35 scale-[0.98] ring-2 ring-pink-400' : ''} ${isOtherDragging ? 'pointer-events-none' : ''}`}
                             >
                               <div className="flex items-center justify-between font-medium text-pink-900 min-w-0">
                                 <span className="truncate flex items-center gap-1 min-w-0">
@@ -858,8 +978,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             key={`${m.id}_${dateStr}`}
                             draggable={true}
                             onDragStart={(e) => {
+                              const durationMin = Math.max(15, p.endMin - p.startMin);
+                              setDraggedItem({ type: 'meeting', id: m.id, durationMinutes: durationMin, title: m.title, color: m.color });
                               e.dataTransfer.setData('text/meeting-id', m.id);
+                              e.dataTransfer.setData('text/plain', `meeting:${m.id}`);
                               e.dataTransfer.effectAllowed = 'move';
+                            }}
+                            onDragEnd={() => {
+                              setDraggedItem(null);
+                              setDragOverTarget(null);
                             }}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -871,10 +998,16 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                               left: `calc(${leftPct}% + 2px)`,
                               width: `calc(${widthPct}% - 4px)`,
                             }}
-                            className="absolute z-10 p-1.5 rounded-lg text-xs border border-indigo-200 bg-indigo-50/90 text-indigo-950 shadow-2xs cursor-pointer hover:border-indigo-400 hover:shadow-xs transition group/event overflow-hidden"
+                            className={`absolute z-10 p-1.5 rounded-lg text-xs border border-indigo-200 bg-indigo-50/90 text-indigo-950 shadow-2xs cursor-grab active:cursor-grabbing hover:border-indigo-400 hover:shadow-xs transition group/event overflow-hidden select-none ${
+                              isDraggingThis ? 'opacity-35 scale-[0.98] ring-2 ring-indigo-400' : ''
+                            } ${isOtherDragging ? 'pointer-events-none' : ''}`}
+                            title="Arrossega per moure en l'agenda"
                           >
                             <div className="flex items-center justify-between font-medium text-indigo-950 min-w-0">
-                              <span className="truncate hover:underline text-xs min-w-0 font-semibold">{m.title}</span>
+                              <span className="truncate hover:underline text-xs min-w-0 font-semibold flex items-center gap-1">
+                                <GripVertical className="w-2.5 h-2.5 text-indigo-400/80 shrink-0 opacity-40 group-hover/event:opacity-100 transition mr-0.5" />
+                                <span className="truncate">{m.title}</span>
+                              </span>
                               <div className="flex items-center gap-1 shrink-0 ml-1">
                                 {recurrenceLabel && (
                                   <span
@@ -953,6 +1086,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                       const startTime = formatMinutesToHHMM(p.startMin);
                       const isShort = heightPx < 45;
                       const { color: projColor, name: projName } = resolveTaskProject(taskItem, projects);
+                      const isDraggingThis = draggedItem?.id === taskItem.id;
+                      const isOtherDragging = draggedItem !== null && !isDraggingThis;
 
                       return (
                         <div
@@ -963,8 +1098,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             onEditTask(taskItem);
                           }}
                           onDragStart={(e) => {
+                            const durationMin = Math.max(15, taskItem.scheduled_duration || 30);
+                            setDraggedItem({ type: 'task', id: taskItem.id, durationMinutes: durationMin, title: taskItem.title, color: projColor });
                             e.dataTransfer.setData('text/plain', taskItem.id);
+                            e.dataTransfer.setData('text/task-id', taskItem.id);
                             e.dataTransfer.effectAllowed = 'move';
+                          }}
+                          onDragEnd={() => {
+                            setDraggedItem(null);
+                            setDragOverTarget(null);
                           }}
                           style={{
                             top: `${topPx}px`,
@@ -973,7 +1115,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             width: `calc(${widthPct}% - 4px)`,
                             ...getAgendaBlockProjectStyle(projColor, isDone),
                           }}
-                          className={`absolute z-10 p-1.5 rounded-lg text-xs border transition-all duration-150 cursor-pointer hover:shadow-xs active:cursor-grabbing overflow-hidden ${
+                          className={`absolute z-10 p-1.5 rounded-lg text-xs border transition-all duration-150 cursor-grab active:cursor-grabbing hover:shadow-xs overflow-hidden select-none ${
                             !projColor
                               ? getCardStyle(taskItem, isDone)
                               : isDone
@@ -981,7 +1123,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                               : 'text-stone-900 shadow-2xs'
                           } ${
                             isDimmed ? 'opacity-20 hover:opacity-90 grayscale-[35%] border-dashed shadow-none' : 'opacity-100'
-                          }`}
+                          } ${isDraggingThis ? 'opacity-35 scale-[0.98] ring-2 ring-indigo-400' : ''} ${isOtherDragging ? 'pointer-events-none' : ''}`}
                         >
                           <div className="flex items-center justify-between gap-1 min-w-0">
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">

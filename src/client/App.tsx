@@ -104,9 +104,9 @@ export const App: React.FC = () => {
   const [habitTab, setHabitTab] = useState<'all' | 'due_today'>('all');
   const [habitTimeFilter, setHabitTimeFilter] = useState<'all' | 'morning' | 'workday' | 'evening' | 'anytime'>('all');
   const [taskTab, setTaskTab] = useState<'all' | 'todo' | 'without_timeline'>('all');
-  const [mobileHabitsTasksTab, setMobileHabitsTasksTab] = useState<'habits' | 'tasks'>('habits');
-  const [mobileTasksAgendaTab, setMobileTasksAgendaTab] = useState<'tasks' | 'agenda' | 'habits'>('tasks');
-  const [desktopBoardTab, setDesktopBoardTab] = useState<'tasks' | 'habits'>('tasks');
+  const [mobileHabitsTasksTab, setMobileHabitsTasksTab] = useState<'habits' | 'dailies' | 'tasks'>('habits');
+  const [mobileTasksAgendaTab, setMobileTasksAgendaTab] = useState<'habits' | 'dailies' | 'tasks' | 'agenda'>('tasks');
+  const [desktopBoardTab, setDesktopBoardTab] = useState<'tasks' | 'habits' | 'dailies'>('tasks');
 
   // Filters
   const [selectedProjectId, setSelectedProjectId] = useState<string | 'all'>('all');
@@ -654,7 +654,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleRescheduleMeeting = async (meetingId: string, date: string, startHour: number) => {
+  const handleRescheduleMeeting = async (meetingId: string, date: string, startHour: number, startMinute: number = 0) => {
     if (!auth) return;
     const meeting = meetings.find((m) => m.id === meetingId);
     if (!meeting) return;
@@ -663,7 +663,9 @@ export const App: React.FC = () => {
       const origEnd = new Date(meeting.end_time);
       const durationMs = Math.max(15 * 60 * 1000, origEnd.getTime() - origStart.getTime());
 
-      const newStart = new Date(`${date}T${String(startHour).padStart(2, '0')}:00:00.000Z`);
+      const hh = String(startHour).padStart(2, '0');
+      const mm = String(startMinute).padStart(2, '0');
+      const newStart = new Date(`${date}T${hh}:${mm}:00.000Z`);
       const newEnd = new Date(newStart.getTime() + durationMs);
 
       await fetchJson(`/api/v1/meetings/${meetingId}`, {
@@ -677,6 +679,12 @@ export const App: React.FC = () => {
           end_time: newEnd.toISOString(),
         }),
       });
+      if (soundEnabled) {
+        playPeacefulChime();
+      }
+      setMindfulReflection(`📅 "${meeting.title}" mogut a ${date} a les ${hh}:${mm}`);
+      if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
+      reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 5000);
       await fetchMeetings();
     } catch (err) {
       console.error('Failed to reschedule meeting:', err);
@@ -1117,7 +1125,7 @@ export const App: React.FC = () => {
     );
     if (existingAction) {
       setMindfulReflection(
-        `⚡ ${habit.title}: ${t.habitActionAlreadyExistsToast || "Aquest hàbit ja té la seva acció d'avui activa a la columna de tasques."}`
+        `⚡ ${habit.title}: ${t.habitActionAlreadyExistsToast || "Aquest hàbit ja té la seva tasca d'avui activa a la columna de tasques."}`
       );
       if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
       reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 6000);
@@ -1177,7 +1185,7 @@ export const App: React.FC = () => {
       if (soundEnabled) {
         playPeacefulChime();
       }
-      setMindfulReflection(`🌱 ${habit.title}: ${t.habitActionCreatedToast || "Acció d'avui creada! En completar-la es registrarà el teu hàbit."}`);
+      setMindfulReflection(`🌱 ${habit.title}: ${t.habitActionCreatedToast || "Tasca d'avui creada! En completar-la es registrarà el teu hàbit."}`);
       if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
       reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 6000);
 
@@ -1405,6 +1413,37 @@ export const App: React.FC = () => {
     });
   }, [filteredTasks, habitTab, zenMode]);
 
+  // Derived 1A. Pure Habits (+/-)
+  const pureHabitsList = useMemo(() => {
+    return baseHabitsList.filter((t) => t.type === 'habit');
+  }, [baseHabitsList]);
+
+  // Derived 1B. Periodical Dailies / Rutines
+  const dailiesList = useMemo(() => {
+    return baseHabitsList.filter((t) => t.type === 'daily');
+  }, [baseHabitsList]);
+
+  const morningDailies = useMemo(
+    () => dailiesList.filter((t) => (t.time_of_day || 'anytime') === 'morning'),
+    [dailiesList]
+  );
+  const workdayDailies = useMemo(
+    () => dailiesList.filter((t) => (t.time_of_day || 'anytime') === 'workday'),
+    [dailiesList]
+  );
+  const eveningDailies = useMemo(
+    () => dailiesList.filter((t) => (t.time_of_day || 'anytime') === 'evening'),
+    [dailiesList]
+  );
+  const anytimeDailies = useMemo(
+    () => dailiesList.filter((t) => (t.time_of_day || 'anytime') === 'anytime'),
+    [dailiesList]
+  );
+  const filteredDailiesList = useMemo(() => {
+    if (habitTimeFilter === 'all') return dailiesList;
+    return dailiesList.filter((t) => (t.time_of_day || 'anytime') === habitTimeFilter);
+  }, [dailiesList, habitTimeFilter]);
+
   // Count habits per time-of-day for filter pills
   const habitCounts = useMemo(() => {
     const counts = {
@@ -1424,6 +1463,26 @@ export const App: React.FC = () => {
     }
     return counts;
   }, [baseHabitsList]);
+
+  // Count dailies per time-of-day for daily filter pills
+  const dailyCounts = useMemo(() => {
+    const counts = {
+      all: dailiesList.length,
+      morning: 0,
+      workday: 0,
+      evening: 0,
+      anytime: 0,
+    };
+    for (const d of dailiesList) {
+      const tod = (d.time_of_day || 'anytime') as 'morning' | 'workday' | 'evening' | 'anytime';
+      if (counts[tod] !== undefined) {
+        counts[tod]++;
+      } else {
+        counts.anytime++;
+      }
+    }
+    return counts;
+  }, [dailiesList]);
 
   // Filtered habits list by active Time-of-Day pill
   const habitsList = useMemo(() => {
@@ -1522,6 +1581,11 @@ export const App: React.FC = () => {
         onLogout={handleLogout}
         zenMode={zenMode}
         onToggleZenMode={toggleZenMode}
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        onSelectProject={(id) => setSelectedProjectId(id)}
+        onOpenNewProject={() => setProjectModalOpen(true)}
+        tasks={tasks}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -1819,79 +1883,145 @@ export const App: React.FC = () => {
         </div>
       </section>
 
+      {/* Active Project Filter Banner */}
+      {selectedProjectId !== 'all' && (() => {
+        const activeProject = projects.find((p) => p.id === selectedProjectId);
+        const count = tasks.filter((t) => t.project_id === selectedProjectId).length;
+        return (
+          <div className="max-w-7xl mx-auto px-4 pt-3 w-full">
+            <div className="flex items-center justify-between px-3.5 py-2 bg-indigo-50/90 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/80 rounded-xl text-xs text-stone-800 dark:text-stone-200 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: activeProject?.color || '#6366f1' }}
+                />
+                <span>
+                  {t.projectsLabel ? t.projectsLabel.replace(/[:：]/g, '') : 'Project'}:{' '}
+                  <strong className="font-semibold text-stone-900 dark:text-stone-100">
+                    {activeProject?.name || 'Project'}
+                  </strong>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white dark:bg-stone-800 border border-indigo-200 dark:border-indigo-800 font-bold text-indigo-700 dark:text-indigo-300">
+                  {count} {t.items || 'items'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProjectId('all')}
+                className="text-xs hover:underline flex items-center gap-1 font-medium cursor-pointer text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
+                title="Clear project filter"
+                aria-label="Clear project filter"
+              >
+                <span>{t.filterAll || 'Show All'}</span>
+                <span className="font-bold text-sm leading-none">×</span>
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Main Content Area based on ViewMode */}
 
-      {/* VIEW 1: HABITS + TASKS (Mobile Segmented Tab or Desktop 2-Col) */}
+      {/* VIEW 1: HABITS + DAILIES + TASKS (Mobile Segmented Tab or Desktop 3-Col) */}
       {viewMode === 'habits_tasks' && (
-        <main className="flex-1 max-w-6xl w-full mx-auto p-4">
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4">
           {/* Mobile Segmented Control */}
           <div className="md:hidden flex items-center justify-center p-1 bg-stone-100 dark:bg-stone-800 rounded-xl mb-4 border border-stone-200 dark:border-stone-700">
             <button
               type="button"
               onClick={() => setMobileHabitsTasksTab('habits')}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
                 mobileHabitsTasksTab === 'habits'
                   ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
                   : 'text-stone-500 dark:text-stone-400'
               }`}
             >
-              <span>🔁 Habits ({habitsList.length})</span>
+              <span>🔁 {t.columnHabits || 'Hàbits'} ({pureHabitsList.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileHabitsTasksTab('dailies')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
+                mobileHabitsTasksTab === 'dailies'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                  : 'text-stone-500 dark:text-stone-400'
+              }`}
+            >
+              <span>🔄 {t.columnDailies || 'Rutines'} ({dailiesList.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setMobileHabitsTasksTab('tasks')}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
+              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
                 mobileHabitsTasksTab === 'tasks'
                   ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
                   : 'text-stone-500 dark:text-stone-400'
               }`}
             >
-              <span>📋 Tasks ({tasksList.length})</span>
+              <span>📋 {t.columnTasks || 'Tasques'} ({tasksList.length})</span>
             </button>
           </div>
 
-          <div className="hidden md:grid md:grid-cols-2 gap-5 items-start">
+          <div className="hidden md:grid md:grid-cols-3 gap-5 items-start">
             {renderHabitsColumn()}
+            {renderDailiesColumn()}
             {renderTasksColumn()}
           </div>
 
           <div className="md:hidden">
-            {mobileHabitsTasksTab === 'habits' ? renderHabitsColumn() : renderTasksColumn()}
+            {mobileHabitsTasksTab === 'habits' ? (
+              renderHabitsColumn()
+            ) : mobileHabitsTasksTab === 'dailies' ? (
+              renderDailiesColumn()
+            ) : (
+              renderTasksColumn()
+            )}
           </div>
         </main>
       )}
 
-      {/* VIEW 2: TASKS + AGENDA / BOARD VIEW (Shows Habits + Tasks + Agenda on XL, segmented left column on LG, and 3-tab on Mobile) */}
+      {/* VIEW 2: HABITS + DAILIES + TASKS + AGENDA / BOARD VIEW */}
       {viewMode === 'tasks_agenda' && (
-        <main className="flex-1 max-w-[1720px] w-full mx-auto p-4">
-          {/* Mobile Segmented Control with Habits, Tasks, and Agenda */}
+        <main className="flex-1 max-w-[1780px] w-full mx-auto p-4">
+          {/* Mobile Segmented Control with Habits, Dailies, Tasks, and Agenda */}
           <div className="lg:hidden flex items-center justify-center p-1 bg-stone-100 dark:bg-stone-800 rounded-xl mb-4 border border-stone-200 dark:border-stone-700">
             <button
               type="button"
               onClick={() => setMobileTasksAgendaTab('habits')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-xs font-semibold text-center transition ${
                 mobileTasksAgendaTab === 'habits'
                   ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
                   : 'text-stone-500 dark:text-stone-400'
               }`}
             >
-              <span>🔁 Habits ({habitsList.length})</span>
+              <span>🔁 {t.columnHabits || 'Hàbits'} ({pureHabitsList.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileTasksAgendaTab('dailies')}
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-xs font-semibold text-center transition ${
+                mobileTasksAgendaTab === 'dailies'
+                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
+                  : 'text-stone-500 dark:text-stone-400'
+              }`}
+            >
+              <span>🔄 {t.columnDailies || 'Rutines'} ({dailiesList.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setMobileTasksAgendaTab('tasks')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-xs font-semibold text-center transition ${
                 mobileTasksAgendaTab === 'tasks'
                   ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
                   : 'text-stone-500 dark:text-stone-400'
               }`}
             >
-              <span>📋 Tasks ({tasksList.length})</span>
+              <span>📋 {t.columnTasks || 'Tasques'} ({tasksList.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setMobileTasksAgendaTab('agenda')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-center transition ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-xs font-semibold text-center transition ${
                 mobileTasksAgendaTab === 'agenda'
                   ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
                   : 'text-stone-500 dark:text-stone-400'
@@ -1901,69 +2031,15 @@ export const App: React.FC = () => {
             </button>
           </div>
 
-          {/* XL Screens: Classic 3-Column Board with Habits + Tasks + Agenda */}
-          <div className="hidden xl:grid xl:grid-cols-[330px_370px_1fr] gap-5 items-start">
-            {renderHabitsColumn()}
-            {renderTasksColumn()}
-            <div className="w-full min-w-0">
-              <AgendaView
-                tasks={tasks}
-                meetings={meetings}
-                ghosts={ghosts}
-                selectedDate={selectedDate}
-                selectedProjectId={selectedProjectId}
-                projects={projects}
-                onSelectDate={setSelectedDate}
-                onScoreTask={handleScoreTask}
-                onEditTask={(task) => {
-                  setEditingTask(task);
-                  setTaskModalOpen(true);
-                }}
-                onScheduleTask={handleScheduleTask}
-                onOpenNewTaskModal={(date, start) => {
-                  setEditingTask(null);
-                  setDefaultTaskType('todo');
-                  setModalScheduledDate(date);
-                  setModalScheduledStart(start);
-                  setTaskModalOpen(true);
-                }}
-                onOpenNewMeetingModal={handleOpenNewMeeting}
-                onEditMeeting={handleEditMeeting}
-                onDeleteMeeting={handleDeleteMeeting}
-                onRescheduleMeeting={handleRescheduleMeeting}
-                onUnscheduleTask={handleUnscheduleTask}
-              />
-            </div>
-          </div>
-
-          {/* LG Screens (1024px - 1279px): Left Column with quick Tasks/Habits toggle + Right Column Agenda */}
-          <div className="hidden lg:grid xl:hidden lg:grid-cols-[410px_1fr] gap-5 items-start">
-            <div className="space-y-3">
-              <div className="flex items-center p-1 bg-stone-100 dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700">
-                <button
-                  type="button"
-                  onClick={() => setDesktopBoardTab('tasks')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
-                    desktopBoardTab === 'tasks'
-                      ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
-                      : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
-                  }`}
-                >
-                  <span>📋 Tasks ({tasksList.length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDesktopBoardTab('habits')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-center transition ${
-                    desktopBoardTab === 'habits'
-                      ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-bold'
-                      : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
-                  }`}
-                >
-                  <span>🔁 Habits ({habitsList.length})</span>
-                </button>
-              </div>
-              {desktopBoardTab === 'tasks' ? renderTasksColumn() : renderHabitsColumn()}
+          {/* Desktop / Laptop Layout:
+              - 2xl (1536px+): 4 columns side-by-side: Habits | Dailies | Tasks | Agenda
+              - lg to xl: Agenda remains visible on right, and the 3 lists stack vertically on left
+          */}
+          <div className="hidden lg:grid 2xl:grid-cols-[280px_310px_350px_1fr] lg:grid-cols-[440px_1fr] gap-5 items-start">
+            <div className="2xl:contents flex flex-col gap-4 max-h-[calc(100vh-190px)] overflow-y-auto pr-1">
+              {renderHabitsColumn()}
+              {renderDailiesColumn()}
+              {renderTasksColumn()}
             </div>
             <div className="w-full min-w-0">
               <AgendaView
@@ -1996,10 +2072,12 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Mobile Display: Habits or Tasks or Agenda */}
+          {/* Mobile Display: Habits or Dailies or Tasks or Agenda */}
           <div className="lg:hidden">
             {mobileTasksAgendaTab === 'habits' ? (
               renderHabitsColumn()
+            ) : mobileTasksAgendaTab === 'dailies' ? (
+              renderDailiesColumn()
             ) : mobileTasksAgendaTab === 'tasks' ? (
               renderTasksColumn()
             ) : (
@@ -2417,10 +2495,8 @@ export const App: React.FC = () => {
     </div>
   );
 
-  // ================= COLUMN 1: HABITS RENDERER =================
-  function renderHabitsColumn() {
-    // Helper to render an individual draggable habit card
-    const renderHabitCard = (habit: Task) => {
+  // ================= HABIT / DAILY CARD RENDERER =================
+  const renderHabitCard = (habit: Task) => {
       const isDone = Boolean(habit.completed);
       if (zenMode && isDone) return null;
       const tod = (habit.time_of_day || 'anytime') as 'morning' | 'workday' | 'evening' | 'anytime';
@@ -2507,16 +2583,16 @@ export const App: React.FC = () => {
                 todayAction.completed ? (
                   <span
                     className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 rounded text-[9px] font-semibold flex items-center gap-0.5"
-                    title={t.habitActionDone || '✓ Acció feta'}
+                    title={t.habitActionDone || '✓ Tasca feta'}
                   >
-                    {t.habitActionDone || '✓ Acció feta'}
+                    {t.habitActionDone || '✓ Tasca feta'}
                   </span>
                 ) : (
                   <span
                     className="px-1.5 py-0.5 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 rounded text-[9px] font-semibold flex items-center gap-0.5"
-                    title={t.habitActionActive || '⚡ Acció activa'}
+                    title={t.habitActionActive || '⚡ Tasca activa'}
                   >
-                    {t.habitActionActive || '⚡ Acció activa'}
+                    {t.habitActionActive || '⚡ Tasca activa'}
                   </span>
                 )
               ) : (
@@ -2524,10 +2600,10 @@ export const App: React.FC = () => {
                   type="button"
                   onClick={() => handleConvertHabitToTodayTask(habit)}
                   className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/70 rounded text-[9px] font-semibold transition flex items-center gap-0.5"
-                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'acció d'avui per aquest hàbit"}
+                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'avui per aquest hàbit"}
                 >
                   <ListPlus className="w-2.5 h-2.5" />
-                  <span>{t.convertHabitToTodayTask || "+ Acció d'avui"}</span>
+                  <span>{t.convertHabitToTodayTask || 'Tasca avui'}</span>
                 </button>
               )}
               <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
@@ -2786,16 +2862,16 @@ export const App: React.FC = () => {
                 todayAction.completed ? (
                   <span
                     className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/90 dark:border-emerald-800 px-2 py-0.5 rounded font-medium flex items-center gap-1"
-                    title={t.habitActionDone || '✓ Acció feta'}
+                    title={t.habitActionDone || '✓ Tasca feta'}
                   >
-                    {t.habitActionDone || '✓ Acció feta'}
+                    {t.habitActionDone || '✓ Tasca feta'}
                   </span>
                 ) : (
                   <span
                     className="text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200/90 dark:border-purple-800 px-2 py-0.5 rounded font-medium flex items-center gap-1"
-                    title={t.habitActionActive || '⚡ Acció activa'}
+                    title={t.habitActionActive || '⚡ Tasca activa'}
                   >
-                    {t.habitActionActive || '⚡ Acció activa'}
+                    {t.habitActionActive || '⚡ Tasca activa'}
                   </span>
                 )
               ) : (
@@ -2803,10 +2879,10 @@ export const App: React.FC = () => {
                   type="button"
                   onClick={() => handleConvertHabitToTodayTask(habit)}
                   className="text-[10px] text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/90 dark:border-indigo-800 px-2 py-0.5 rounded font-medium transition flex items-center gap-1"
-                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'acció d'avui per aquest hàbit"}
+                  title={t.convertHabitToTodayTaskTooltip || "Crear la tasca d'avui per aquest hàbit"}
                 >
                   <ListPlus className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
-                  <span>{t.convertHabitToTodayTask || "+ Acció d'avui"}</span>
+                  <span>{t.convertHabitToTodayTask || 'Tasca avui'}</span>
                 </button>
               )}
             </div>
@@ -2815,16 +2891,64 @@ export const App: React.FC = () => {
       );
     };
 
+  // ================= COLUMN 1: HABITS (+/-) RENDERER =================
+  function renderHabitsColumn() {
     return (
-      <div className="bg-stone-100/70 border border-stone-200 rounded-2xl flex flex-col max-h-[calc(100vh-210px)]">
+      <div className="bg-stone-100/70 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/80 rounded-2xl flex flex-col max-h-[calc(100vh-210px)]">
         {/* Header */}
-        <div className="p-3.5 border-b border-stone-200 bg-white rounded-t-2xl space-y-2.5">
-          {/* Row 1: Title & Controls */}
+        <div className="p-3.5 border-b border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800 rounded-t-2xl space-y-2 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span className="font-bold text-xs text-stone-800 uppercase tracking-wider">
-                Habits ({baseHabitsList.length})
+              <span className="font-bold text-xs text-stone-800 dark:text-stone-200 uppercase tracking-wider">
+                {t.columnHabits || 'Hàbits (+/-)'} ({pureHabitsList.length})
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  setEditingTask(null);
+                  setDefaultTaskType('habit');
+                  setTaskModalOpen(true);
+                }}
+                className="p-1 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-lg transition"
+                title="Add Habit"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Habit Cards Container */}
+        <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
+          {pureHabitsList.length === 0 ? (
+            <div className="text-center py-12 px-4 text-xs text-stone-400">
+              <p className="font-medium text-stone-500 mb-1">{t.noHabitsMessage}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {pureHabitsList.map(renderHabitCard)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ================= COLUMN 2: DAILIES / RUTINES RENDERER =================
+  function renderDailiesColumn() {
+    return (
+      <div className="bg-stone-100/70 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/80 rounded-2xl flex flex-col max-h-[calc(100vh-210px)]">
+        {/* Header */}
+        <div className="p-3.5 border-b border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800 rounded-t-2xl space-y-2.5 shrink-0">
+          {/* Row 1: Title & Controls */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+              <span className="font-bold text-xs text-stone-800 dark:text-stone-200 uppercase tracking-wider">
+                {t.columnDailies || 'Rutines'} ({dailiesList.length})
               </span>
             </div>
 
@@ -2834,23 +2958,23 @@ export const App: React.FC = () => {
                 onClick={() => setHabitTab(habitTab === 'all' ? 'due_today' : 'all')}
                 className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition ${
                   habitTab === 'due_today'
-                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold shadow-2xs'
-                    : 'bg-stone-100 text-stone-500 border-stone-200 hover:text-stone-700'
+                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-semibold shadow-2xs'
+                    : 'bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 border-stone-200 dark:border-stone-600 hover:text-stone-700 dark:hover:text-stone-200'
                 }`}
                 title={habitTab === 'due_today' ? 'Showing Due Today. Click for all.' : 'Filter to Due Today'}
               >
                 {t.subtabDueToday}
               </button>
 
-              {/* Add Habit modal button */}
+              {/* Add Daily modal button */}
               <button
                 onClick={() => {
                   setEditingTask(null);
                   setDefaultTaskType('daily');
                   setTaskModalOpen(true);
                 }}
-                className="p-1 text-stone-400 hover:text-stone-800 hover:bg-stone-100 rounded-lg transition"
-                title="Add Habit"
+                className="p-1 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-lg transition"
+                title="Add Daily Routine"
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -2858,166 +2982,161 @@ export const App: React.FC = () => {
           </div>
 
           {/* Row 2: Time-of-Day Filter Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar text-[11px] pt-1 border-t border-stone-100">
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar text-[11px] pt-1 border-t border-stone-100 dark:border-stone-700/60">
             <button
               onClick={() => setHabitTimeFilter('all')}
               className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
                 habitTimeFilter === 'all'
-                  ? 'bg-white text-stone-800 border-stone-300 shadow-2xs font-semibold'
-                  : 'text-stone-500 border-transparent hover:bg-stone-100 hover:text-stone-700'
+                  ? 'bg-white dark:bg-stone-700 text-stone-800 dark:text-stone-100 border-stone-300 dark:border-stone-600 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-stone-100 dark:hover:bg-stone-700/60 hover:text-stone-700'
               }`}
             >
               <span>{t.subtabAll}</span>
-              <span className="text-[9px] opacity-75 font-mono">({habitCounts.all})</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.all})</span>
             </button>
 
             <button
               onClick={() => setHabitTimeFilter('morning')}
               className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
                 habitTimeFilter === 'morning'
-                  ? 'bg-amber-50 text-amber-800 border-amber-300 shadow-2xs font-semibold'
-                  : 'text-stone-500 border-transparent hover:bg-amber-50/60 hover:text-amber-800'
+                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-amber-50/60 dark:hover:bg-amber-900/30 hover:text-amber-800'
               }`}
             >
               <Sun className="w-3 h-3 text-amber-500" />
               <span>{t.timeFilterMorning}</span>
-              <span className="text-[9px] opacity-75 font-mono">({habitCounts.morning})</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.morning})</span>
             </button>
 
             <button
               onClick={() => setHabitTimeFilter('workday')}
               className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
                 habitTimeFilter === 'workday'
-                  ? 'bg-blue-50 text-blue-800 border-blue-300 shadow-2xs font-semibold'
-                  : 'text-stone-500 border-transparent hover:bg-blue-50/60 hover:text-blue-800'
+                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-200 border-blue-300 dark:border-blue-700 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-blue-50/60 dark:hover:bg-blue-900/30 hover:text-blue-800'
               }`}
             >
               <Briefcase className="w-3 h-3 text-blue-500" />
               <span>{t.timeFilterWorkday}</span>
-              <span className="text-[9px] opacity-75 font-mono">({habitCounts.workday})</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.workday})</span>
             </button>
 
             <button
               onClick={() => setHabitTimeFilter('evening')}
               className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
                 habitTimeFilter === 'evening'
-                  ? 'bg-purple-50 text-purple-800 border-purple-300 shadow-2xs font-semibold'
-                  : 'text-stone-500 border-transparent hover:bg-purple-50/60 hover:text-purple-800'
+                  ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 border-purple-300 dark:border-purple-700 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-purple-50/60 dark:hover:bg-purple-900/30 hover:text-purple-800'
               }`}
             >
               <Moon className="w-3 h-3 text-purple-500" />
               <span>{t.timeFilterEvening}</span>
-              <span className="text-[9px] opacity-75 font-mono">({habitCounts.evening})</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.evening})</span>
             </button>
 
             <button
               onClick={() => setHabitTimeFilter('anytime')}
               className={`px-2 py-0.5 rounded-lg border font-medium transition whitespace-nowrap flex items-center gap-1 ${
                 habitTimeFilter === 'anytime'
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs font-semibold'
-                  : 'text-stone-500 border-transparent hover:bg-emerald-50/60 hover:text-emerald-800'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700 shadow-2xs font-semibold'
+                  : 'text-stone-500 dark:text-stone-400 border-transparent hover:bg-emerald-50/60 dark:hover:bg-emerald-900/30 hover:text-emerald-800'
               }`}
             >
               <Sparkles className="w-3 h-3 text-emerald-500" />
               <span>{t.timeFilterAnytime}</span>
-              <span className="text-[9px] opacity-75 font-mono">({habitCounts.anytime})</span>
+              <span className="text-[9px] opacity-75 font-mono">({dailyCounts.anytime})</span>
             </button>
           </div>
         </div>
 
-        {/* Habit Cards Container */}
+        {/* Routine Cards Container */}
         <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
-          {baseHabitsList.length === 0 ? (
+          {dailiesList.length === 0 ? (
             <div className="text-center py-12 px-4 text-xs text-stone-400">
-              <p className="font-medium text-stone-500 mb-1">{t.noHabitsMessage}</p>
+              <p className="font-medium text-stone-500 mb-1">{t.noDailiesMessage || 'No daily routines found'}</p>
             </div>
           ) : habitTimeFilter === 'all' ? (
             /* Sectioned Views under 'All' */
             <div className="space-y-4">
-              {/* Morning Kickoff Section */}
-              {morningHabits.length > 0 && (
+              {morningDailies.length > 0 && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-amber-900 bg-amber-50/80 rounded-lg border border-amber-200/60">
+                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-amber-900 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200/60 dark:border-amber-800/40">
                     <div className="flex items-center gap-1.5">
                       <Sun className="w-3.5 h-3.5 text-amber-600" />
                       <span>Morning Kickoff</span>
                     </div>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-mono font-medium">
-                      {morningHabits.length}
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-mono font-medium">
+                      {morningDailies.length}
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {morningHabits.map(renderHabitCard)}
+                    {morningDailies.map(renderHabitCard)}
                   </div>
                 </div>
               )}
 
-              {/* Workday Focus Section */}
-              {workdayHabits.length > 0 && (
+              {workdayDailies.length > 0 && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-blue-900 bg-blue-50/80 rounded-lg border border-blue-200/60">
+                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-blue-900 bg-blue-50/80 dark:bg-blue-950/40 rounded-lg border border-blue-200/60 dark:border-blue-800/40">
                     <div className="flex items-center gap-1.5">
                       <Briefcase className="w-3.5 h-3.5 text-blue-600" />
                       <span>Workday Focus</span>
                     </div>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-800 font-mono font-medium">
-                      {workdayHabits.length}
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-mono font-medium">
+                      {workdayDailies.length}
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {workdayHabits.map(renderHabitCard)}
+                    {workdayDailies.map(renderHabitCard)}
                   </div>
                 </div>
               )}
 
-              {/* Evening Shutdown Section */}
-              {eveningHabits.length > 0 && (
+              {eveningDailies.length > 0 && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-purple-900 bg-purple-50/80 rounded-lg border border-purple-200/60">
+                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-purple-900 bg-purple-50/80 dark:bg-purple-950/40 rounded-lg border border-purple-200/60 dark:border-purple-800/40">
                     <div className="flex items-center gap-1.5">
                       <Moon className="w-3.5 h-3.5 text-purple-600" />
                       <span>Evening Shutdown</span>
                     </div>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 font-mono font-medium">
-                      {eveningHabits.length}
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-mono font-medium">
+                      {eveningDailies.length}
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {eveningHabits.map(renderHabitCard)}
+                    {eveningDailies.map(renderHabitCard)}
                   </div>
                 </div>
               )}
 
-              {/* Anytime Routines Section */}
-              {anytimeHabits.length > 0 && (
+              {anytimeDailies.length > 0 && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-stone-700 bg-stone-100/80 rounded-lg border border-stone-200/70">
+                  <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-stone-700 dark:text-stone-300 bg-stone-100/80 dark:bg-stone-800/60 rounded-lg border border-stone-200/70 dark:border-stone-700/60">
                     <div className="flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
                       <span>Anytime Routines</span>
                     </div>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-stone-200 text-stone-700 font-mono font-medium">
-                      {anytimeHabits.length}
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300 font-mono font-medium">
+                      {anytimeDailies.length}
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {anytimeHabits.map(renderHabitCard)}
+                    {anytimeDailies.map(renderHabitCard)}
                   </div>
                 </div>
               )}
             </div>
           ) : (
-            /* Filtered View for Specific Time-of-Day */
             <div className="space-y-2">
-              {habitsList.length === 0 ? (
+              {filteredDailiesList.length === 0 ? (
                 <div className="text-center py-10 px-4 text-xs text-stone-400">
                   <p className="font-medium text-stone-500 mb-1 capitalize">
-                    No {habitTimeFilter} habits
+                    No {habitTimeFilter} routines
                   </p>
-                  <p>Edit or add a habit with the &ldquo;{habitTimeFilter}&rdquo; time-of-day tag.</p>
+                  <p>Edit or add a routine with the &ldquo;{habitTimeFilter}&rdquo; time-of-day tag.</p>
                 </div>
               ) : (
-                habitsList.map(renderHabitCard)
+                filteredDailiesList.map(renderHabitCard)
               )}
             </div>
           )}
@@ -3186,7 +3305,7 @@ export const App: React.FC = () => {
                         )}
                       </button>
                       {task.habit_id && (
-                        <span className="text-[10px] text-purple-600 dark:text-purple-400 shrink-0 font-bold" title={t.habitActionBadge || "Acció d'hàbit"}>
+                        <span className="text-[10px] text-purple-600 dark:text-purple-400 shrink-0 font-bold" title={t.habitActionBadge || "Tasca d'hàbit"}>
                           🔁
                         </span>
                       )}
@@ -3331,7 +3450,7 @@ export const App: React.FC = () => {
                           <div className="mt-1 flex items-center justify-between gap-1 text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800 font-medium">
                             <div className="flex items-center gap-1 truncate">
                               <span>🔁</span>
-                              <span className="font-semibold">{t.habitActionBadge || "Acció d'hàbit"}:</span>
+                              <span className="font-semibold">{t.habitActionBadge || "Tasca d'hàbit"}:</span>
                               <span className="truncate">{parentHabit ? parentHabit.title : ''}</span>
                             </div>
                             {parentHabit && (parentHabit.streak !== undefined || parentHabit.counter_up !== undefined) && (
