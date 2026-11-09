@@ -94,7 +94,7 @@ export const DailyShutdownModal: React.FC<DailyShutdownModalProps> = ({
 
               {completedTasks.length === 0 ? (
                 <p className="text-xs text-stone-400 italic py-2">
-                  No tasks marked complete today. Remember: resting and protecting your spoons is also progress.
+                  No tasks marked complete today. Remember: resting and protecting your energy is also progress.
                 </p>
               ) : (
                 <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">

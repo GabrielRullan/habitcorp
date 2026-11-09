@@ -40,7 +40,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  BatteryLow,
   Monitor,
   Target,
   Inbox,
@@ -1790,7 +1789,7 @@ export const App: React.FC = () => {
                     e.stopPropagation();
                     if (!isDone) {
                       handleScoreTask(habit.id, 'up');
-                      setMindfulReflection('🌱 Starter step logged! You maintained your habit momentum on a low-spoon day.');
+                      setMindfulReflection('🌱 Starter step logged! You maintained your habit momentum on a low-energy day.');
                       if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
                       reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
                     }
@@ -2529,7 +2528,7 @@ export const App: React.FC = () => {
                             e.stopPropagation();
                             if (!isDone) {
                               handleScoreTask(task.id, 'up');
-                              setMindfulReflection('🌱 Starter step logged! You maintained your momentum on a low-spoon day.');
+                              setMindfulReflection('🌱 Starter step logged! You maintained your momentum on a low-energy day.');
                               if (reflectionTimeoutRef.current) clearTimeout(reflectionTimeoutRef.current);
                               reflectionTimeoutRef.current = setTimeout(() => setMindfulReflection(null), 7000);
                             }
@@ -2895,90 +2894,62 @@ export const App: React.FC = () => {
             }}
             className="flex-1 flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar scroll-smooth py-1"
           >
-            {/* Spoon Theory Low-Battery Filter */}
-            <button
-              type="button"
-              onClick={() => setLowBatteryFilter((prev) => !prev)}
-              className={`px-2.5 py-1 rounded-lg font-medium border text-xs transition shrink-0 flex items-center gap-1.5 ${
-                lowBatteryFilter
-                  ? 'bg-amber-100 dark:bg-amber-950/80 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-semibold shadow-2xs'
-                  : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-50/50'
-              }`}
-              title="Low Battery Mode: Show only low-activation tasks (XS: 5–15m & S: 15–30m)"
-              aria-pressed={lowBatteryFilter}
-            >
-              <BatteryLow className={`w-3.5 h-3.5 ${lowBatteryFilter ? 'text-amber-600 dark:text-amber-400' : 'text-stone-400'}`} />
-              <span>Low Battery</span>
-              {lowBatteryFilter && (
-                <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-950 dark:text-amber-100 px-1 rounded-full font-bold">
-                  ON
-                </span>
-              )}
-            </button>
-
-            {/* Daily Spoon Battery Gauge */}
-            <div
-              onClick={() => setLowBatteryFilter((prev) => !prev)}
-              className={`px-2.5 py-1 rounded-lg border text-xs cursor-pointer transition select-none flex items-center gap-1.5 shrink-0 ${
-                spoonStats.isOverloaded
-                  ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-                  : spoonStats.pendingSpoons > 8
-                  ? 'bg-amber-50 dark:bg-amber-950/70 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
-                  : 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-              }`}
-              title={`Today's Spoon Budget: ${spoonStats.pendingSpoons} spoons pending, ${spoonStats.completedSpoons} completed. (Max recommended: ${spoonStats.totalTarget} spoons). Click to toggle Low Battery filter.`}
-            >
-              <span>{spoonStats.isOverloaded ? '⚡' : '🔋'}</span>
-              <span className="font-semibold font-mono">{spoonStats.pendingSpoons}/{spoonStats.totalTarget} Spoons</span>
-              {spoonStats.isOverloaded && (
-                <span className="text-[9px] font-bold uppercase tracking-wider bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-100 px-1 rounded-xs">
-                  Heavy
-                </span>
-              )}
-            </div>
-
-            {/* Contextual Energy Mode Selector (Elena, Alex, Dr. Marcus) */}
+            {/* Unified Contextual Energy Mode Selector */}
             <div className="flex items-center gap-1 p-0.5 bg-stone-100 dark:bg-stone-800 rounded-lg border border-stone-200 dark:border-stone-700 text-xs shrink-0 select-none">
               <button
                 type="button"
                 onClick={() => handleSetEnergyMode('gentle')}
-                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
                   energyMode === 'gentle'
-                    ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 font-bold shadow-2xs'
-                    : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+                    ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 font-semibold shadow-2xs'
+                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
                 }`}
-                title="Gentle mode: low spoons / overwhelm (XS/S tasks & compact zen)"
+                title="Gentle mode: low energy / overwhelm (XS: 5–15m & S: 15–30m tasks)"
               >
                 <span>🔋</span>
-                <span className="hidden sm:inline">Gentle</span>
+                <span>Gentle</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleSetEnergyMode('steady')}
-                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
                   energyMode === 'steady'
-                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 font-bold shadow-2xs'
-                    : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 font-semibold shadow-2xs'
+                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
                 }`}
                 title="Steady mode: normal pace and balanced load"
               >
                 <span>🌱</span>
-                <span className="hidden sm:inline">Steady</span>
+                <span>Steady</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleSetEnergyMode('high')}
-                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
                   energyMode === 'high'
-                    ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-200 font-bold shadow-2xs'
-                    : 'text-stone-500 dark:text-stone-400 hover:text-stone-800'
+                    ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-200 font-semibold shadow-2xs'
+                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
                 }`}
-                title="High energy: ready for deep focus and big challenges"
+                title="High energy mode: ready for deep focus and big challenges"
               >
                 <span>⚡</span>
-                <span className="hidden sm:inline">High</span>
+                <span>High</span>
               </button>
             </div>
+
+            {/* Overload Warning Badge (if scheduled workload exceeds daily target) */}
+            {spoonStats.isOverloaded && (
+              <div
+                className="px-2.5 py-1 rounded-lg border text-xs flex items-center gap-1.5 shrink-0 bg-rose-50 dark:bg-rose-950/70 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 select-none"
+                title={`High workload scheduled for today (${spoonStats.pendingSpoons} pts pending vs. recommended target of ${spoonStats.totalTarget}). Consider pacing or moving some tasks.`}
+              >
+                <span>⚠️</span>
+                <span className="font-medium">Heavy Workload</span>
+                <span className="text-[10px] bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-100 px-1 rounded-full font-bold">
+                  +${spoonStats.pendingSpoons - spoonStats.totalTarget}
+                </span>
+              </div>
+            )}
 
             {projects.map((p) => {
               const count = tasks.filter((t) => t.project_id === p.id).length;
