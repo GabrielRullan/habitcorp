@@ -5,6 +5,11 @@
  */
 
 import { Task, Project, CalendarMeeting, Ghost, CalendarSource, AuthState } from './types';
+import {
+  syncClientDbWithCloud,
+  startRealtimeCloudSubscription,
+  recordDeletedId,
+} from './cloudSync';
 
 interface StoredData {
   users: Array<{
@@ -663,7 +668,7 @@ export function getClientDb(): StoredData {
   }
 }
 
-export function saveClientDb(data: StoredData) {
+function saveClientDbRaw(data: StoredData) {
   try {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -671,6 +676,16 @@ export function saveClientDb(data: StoredData) {
   } catch (e) {
     console.error('Failed to save to localStorage:', e);
   }
+}
+
+export function triggerCloudSync(userId: string = 'user_gabriel'): Promise<boolean> {
+  startRealtimeCloudSubscription(userId, getClientDb, saveClientDbRaw);
+  return syncClientDbWithCloud(userId, getClientDb, saveClientDbRaw, true);
+}
+
+export function saveClientDb(data: StoredData, syncUserId: string = 'user_gabriel') {
+  saveClientDbRaw(data);
+  syncClientDbWithCloud(syncUserId, getClientDb, saveClientDbRaw, true).catch(() => {});
 }
 
 export function daysBetween(dateA: string, dateB: string): number {
@@ -818,6 +833,9 @@ export async function handleClientStorageRequest(
   const apiKey = (options?.headers as any)?.['X-API-Key'] || (options?.headers as any)?.['x-api-key'];
   const currentUser = (apiKey ? db.users.find((u) => u.apiKey === apiKey) : null) || db.users.find((u) => u.username === 'gabriel') || db.users[0];
   const currentUserId = currentUser.id;
+
+  // Start realtime subscription & background cloud sync
+  startRealtimeCloudSubscription(currentUserId, getClientDb, saveClientDbRaw);
 
   // Run rollover on every client request to ensure state is always synchronized with calendar day
   runClientRollover(db, currentUserId);
@@ -998,6 +1016,7 @@ export async function handleClientStorageRequest(
     }
     if (projMatch && method === 'DELETE') {
       const projId = projMatch[1];
+      recordDeletedId('project', projId);
       db.projects = db.projects.filter((p) => p.id !== projId);
       db.tasks.forEach((t) => {
         if (t.project_id === projId) {
@@ -1006,7 +1025,7 @@ export async function handleClientStorageRequest(
           delete (t as any).project_color;
         }
       });
-      saveClientDb(db);
+      saveClientDb(db, currentUserId);
       return { message: 'Project deleted.' };
     }
   }
@@ -1123,9 +1142,10 @@ export async function handleClientStorageRequest(
     // Delete task
     if (idMatch && method === 'DELETE') {
       const taskId = idMatch[1];
+      recordDeletedId('task', taskId);
       db.tasks = db.tasks.filter((t) => t.id !== taskId);
       db.subtasks = db.subtasks.filter((s) => s.task_id !== taskId);
-      saveClientDb(db);
+      saveClientDb(db, currentUserId);
       return { message: 'Task deleted successfully.' };
     }
 
@@ -1182,6 +1202,7 @@ export async function handleClientStorageRequest(
 
     // List tasks
     if (path === '/api/v1/tasks' && method === 'GET') {
+      syncClientDbWithCloud(currentUserId, getClientDb, saveClientDbRaw, true).catch(() => {});
       const userTasks = (db.tasks || [])
         .filter((t) => t.user_id === currentUserId)
         .map(enrichTask);
@@ -1273,8 +1294,9 @@ export async function handleClientStorageRequest(
     }
     if (method === 'DELETE') {
       const meetId = path.split('/')[4];
+      recordDeletedId('meeting', meetId);
       db.meetings = db.meetings.filter((m) => m.id !== meetId);
-      saveClientDb(db);
+      saveClientDb(db, currentUserId);
       return { success: true };
     }
   }
@@ -1336,16 +1358,23 @@ export async function handleClientStorageRequest(
     }
     if (method === 'DELETE') {
       const ghostId = path.split('/')[4];
+      recordDeletedId('ghost', ghostId);
       db.ghosts = db.ghosts.filter((g) => g.id !== ghostId);
       db.meetings = db.meetings.filter((m) => {
-        if (m.ghost_id === ghostId) return false;
+        if (m.ghost_id === ghostId) {
+          recordDeletedId('meeting', m.id);
+          return false;
+        }
         if (m.ghost_ids?.includes(ghostId)) {
           m.ghost_ids = m.ghost_ids.filter((id) => id !== ghostId);
-          if (m.ghost_ids.length === 0) return false;
+          if (m.ghost_ids.length === 0) {
+            recordDeletedId('meeting', m.id);
+            return false;
+          }
         }
         return true;
       });
-      saveClientDb(db);
+      saveClientDb(db, currentUserId);
       return { success: true };
     }
   }

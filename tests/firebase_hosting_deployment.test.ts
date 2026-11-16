@@ -12,6 +12,7 @@ import {
   runClientRollover,
   handleClientStorageRequest,
 } from '../src/client/clientStore';
+import { mergeCollectionById } from '../src/client/cloudSync';
 import { initSchema } from '../src/server/db';
 import { seedDefaultRoutines } from '../src/server/seedRoutines';
 import { I18nProvider } from '../src/client/i18n/I18nContext';
@@ -290,6 +291,35 @@ describe('Firebase Hosting & habits.balears.tech Deployment Verification', () =>
         .get() as { id: string; title: string } | undefined;
       expect(preserved).toBeDefined();
       expect(preserved?.title).toBe('Must Never Be Deleted');
+    });
+
+    it('non-destructively merges Desktop and Mobile tasks via Cloud Firestore mergeCollectionById', () => {
+      const desktopTasks = [
+        { id: 'task_correr', user_id: 'user_gabriel', title: 'Correr', updated_at: '2026-11-16T10:00:00.000Z' },
+        { id: 'task_shared', user_id: 'user_gabriel', title: 'Shared Old', updated_at: '2026-11-16T09:00:00.000Z' },
+      ];
+      const mobileCloudTasks = [
+        { id: 'task_mobile_new', user_id: 'user_gabriel', title: 'Mobile Quick Add', updated_at: '2026-11-16T11:00:00.000Z' },
+        { id: 'task_shared', user_id: 'user_gabriel', title: 'Shared Updated on Mobile', updated_at: '2026-11-16T12:00:00.000Z' },
+        { id: 'task_deleted', user_id: 'user_gabriel', title: 'Deleted Task', updated_at: '2026-11-16T08:00:00.000Z' },
+      ];
+
+      const result = mergeCollectionById(
+        desktopTasks,
+        mobileCloudTasks,
+        'user_gabriel',
+        new Set(['task_deleted']),
+        true
+      );
+
+      expect(result.userItems.map((t) => t.id).sort()).toEqual([
+        'task_correr',
+        'task_mobile_new',
+        'task_shared',
+      ]);
+      expect(result.userItems.find((t) => t.id === 'task_shared')?.title).toBe('Shared Updated on Mobile');
+      expect(result.changedLocally).toBe(true);
+      expect(result.needsCloudPush).toBe(true);
     });
   });
 });

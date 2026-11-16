@@ -543,17 +543,30 @@ export const App: React.FC = () => {
         checkRollover();
         if (auth) {
           fetchTasks();
+          fetchProjects();
+          fetchMeetings();
         }
+      }
+    };
+
+    const onCloudSync = () => {
+      if (auth) {
+        fetchTasks();
+        fetchProjects();
+        fetchMeetings();
+        fetchGhosts();
       }
     };
 
     window.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
+    window.addEventListener('habitcorp:cloud-sync', onCloudSync);
 
     return () => {
       clearInterval(timer);
       window.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
+      window.removeEventListener('habitcorp:cloud-sync', onCloudSync);
     };
   }, [todayStr, auth]);
 

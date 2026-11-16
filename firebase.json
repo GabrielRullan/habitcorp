@@ -1,4 +1,11 @@
 {
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json",
+    "edition": "enterprise",
+    "database": "habitcorp-db",
+    "location": "europe-southwest1"
+  },
   "hosting": {
     "public": "dist/client",
     "ignore": [

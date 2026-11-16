@@ -1,0 +1,136 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // This security rules file assumes the following data structures:
+    //
+    // Collection: workspaces
+    // Document ID: {workspaceId} matching ^[a-zA-Z0-9_-]{3,64}$ (e.g. user_gabriel)
+    // Fields:
+    //   - userId: string (required, immutable, must equal workspaceId, 3..64 chars)
+    //   - projects: list (required, max 500 items) - user projects
+    //   - tasks: list (required, max 5000 items) - user habits, dailies, and todos
+    //   - subtasks: list (optional, max 10000 items) - task checklist items
+    //   - meetings: list (required, max 5000 items) - calendar events and meetings
+    //   - ghosts: list (required, max 200 items) - family / delegate profiles
+    //   - calendars: list (optional, max 200 items) - external calendar sources
+    //   - deletedTaskIds: list (optional, max 5000 items) - tombstone IDs for deleted tasks
+    //   - deletedProjectIds: list (optional, max 500 items) - tombstone IDs for deleted projects
+    //   - deletedMeetingIds: list (optional, max 5000 items) - tombstone IDs for deleted meetings
+    //   - deletedGhostIds: list (optional, max 200 items) - tombstone IDs for deleted ghosts
+    //   - updatedAt: string (required, ISO-8601 timestamp string, 1..64 chars)
+    //
+    // Note: No user credentials, passwords, API keys, or magic links are stored in
+    // workspaces/{workspaceId} to prevent PII/credential exposure.
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isValidWorkspaceId(workspaceId) {
+      return workspaceId is string &&
+             workspaceId.size() >= 3 &&
+             workspaceId.size() <= 64 &&
+             workspaceId.matches('^[a-zA-Z0-9_-]{3,64}$');
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string &&
+             val.size() >= minLen &&
+             val.size() <= maxLen;
+    }
+
+    function isValidList(val, maxSize) {
+      return val is list && val.size() <= maxSize;
+    }
+
+    function isValidOptionalList(data, field, maxSize) {
+      return !(field in data) || (data[field] is list && data[field].size() <= maxSize);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidWorkspace(data, workspaceId) {
+      let allowedFields = [
+        'userId',
+        'projects',
+        'tasks',
+        'subtasks',
+        'meetings',
+        'ghosts',
+        'calendars',
+        'deletedTaskIds',
+        'deletedProjectIds',
+        'deletedMeetingIds',
+        'deletedGhostIds',
+        'updatedAt'
+      ];
+      let requiredFields = [
+        'userId',
+        'projects',
+        'tasks',
+        'meetings',
+        'ghosts',
+        'updatedAt'
+      ];
+
+      return hasOnlyAllowedFields(allowedFields) &&
+             hasRequiredFields(requiredFields) &&
+             data.userId is string &&
+             data.userId == workspaceId &&
+             isValidList(data.projects, 500) &&
+             isValidList(data.tasks, 5000) &&
+             isValidOptionalList(data, 'subtasks', 10000) &&
+             isValidList(data.meetings, 5000) &&
+             isValidList(data.ghosts, 200) &&
+             isValidOptionalList(data, 'calendars', 200) &&
+             isValidOptionalList(data, 'deletedTaskIds', 5000) &&
+             isValidOptionalList(data, 'deletedProjectIds', 500) &&
+             isValidOptionalList(data, 'deletedMeetingIds', 5000) &&
+             isValidOptionalList(data, 'deletedGhostIds', 200) &&
+             isValidString(data.updatedAt, 1, 64);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /workspaces/{workspaceId} {
+      // Allow fetching a specific workspace by exact ID; disallow listing all workspaces
+      allow get: if isValidWorkspaceId(workspaceId);
+      allow list: if false;
+
+      // Allow creating or updating a workspace snapshot if schema and bounds are valid
+      allow create: if isValidWorkspaceId(workspaceId) &&
+                       isValidWorkspace(request.resource.data, workspaceId);
+
+      allow update: if isValidWorkspaceId(workspaceId) &&
+                       isValidWorkspace(request.resource.data, workspaceId) &&
+                       request.resource.data.userId == resource.data.userId;
+
+      // Never allow deleting workspace documents to prevent accidental data loss
+      allow delete: if false;
+    }
+
+    // Default deny all other collections and paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
