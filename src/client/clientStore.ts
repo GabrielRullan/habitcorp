@@ -9,6 +9,7 @@ import {
   syncClientDbWithCloud,
   startRealtimeCloudSubscription,
   recordDeletedId,
+  DEMO_SEED_IDS,
 } from './cloudSync';
 
 interface StoredData {
@@ -586,14 +587,24 @@ function getDefaultSeedData(): StoredData {
 }
 
 function normalizeStoredData(data: Partial<StoredData>, seed: StoredData): StoredData {
+  const normalizeOwner = <T extends { id: string; user_id?: string }>(items: T[]): T[] => {
+    return items.map((item) => {
+      if (!item || !item.id) return item;
+      if (!DEMO_SEED_IDS.has(item.id) && item.user_id !== 'user_gabriel') {
+        return { ...item, user_id: 'user_gabriel' };
+      }
+      return item;
+    });
+  };
+
   const normalized: StoredData = {
     users: Array.isArray(data.users) ? [...data.users] : [],
-    projects: Array.isArray(data.projects) ? [...data.projects] : [],
-    tasks: Array.isArray(data.tasks) ? [...data.tasks] : [],
+    projects: normalizeOwner(Array.isArray(data.projects) ? [...data.projects] : []),
+    tasks: normalizeOwner(Array.isArray(data.tasks) ? [...data.tasks] : []),
     subtasks: Array.isArray(data.subtasks) ? [...data.subtasks] : [],
-    meetings: Array.isArray(data.meetings) ? [...data.meetings] : [],
-    ghosts: Array.isArray(data.ghosts) ? [...data.ghosts] : [],
-    calendars: Array.isArray(data.calendars) ? [...data.calendars] : [],
+    meetings: normalizeOwner(Array.isArray(data.meetings) ? [...data.meetings] : []),
+    ghosts: normalizeOwner(Array.isArray(data.ghosts) ? [...data.ghosts] : []),
+    calendars: normalizeOwner(Array.isArray(data.calendars) ? [...data.calendars] : []),
     magicLinks: Array.isArray(data.magicLinks) ? [...data.magicLinks] : [],
   };
 
@@ -678,9 +689,9 @@ function saveClientDbRaw(data: StoredData) {
   }
 }
 
-export function triggerCloudSync(userId: string = 'user_gabriel'): Promise<boolean> {
+export function triggerCloudSync(userId: string = 'user_gabriel', forcePush: boolean = false): Promise<boolean> {
   startRealtimeCloudSubscription(userId, getClientDb, saveClientDbRaw);
-  return syncClientDbWithCloud(userId, getClientDb, saveClientDbRaw, true);
+  return syncClientDbWithCloud(userId, getClientDb, saveClientDbRaw, true, forcePush);
 }
 
 export function saveClientDb(data: StoredData, syncUserId: string = 'user_gabriel') {
@@ -809,7 +820,7 @@ export function runClientRollover(db: StoredData, userId?: string, customDate?: 
   }
 
   if (anyChanged) {
-    saveClientDb(db);
+    saveClientDbRaw(db);
   }
   return anyChanged;
 }
@@ -830,8 +841,7 @@ export async function handleClientStorageRequest(
     } catch {}
   }
 
-  const apiKey = (options?.headers as any)?.['X-API-Key'] || (options?.headers as any)?.['x-api-key'];
-  const currentUser = (apiKey ? db.users.find((u) => u.apiKey === apiKey) : null) || db.users.find((u) => u.username === 'gabriel') || db.users[0];
+  const currentUser = db.users.find((u) => u.username === 'gabriel') || db.users[0];
   const currentUserId = currentUser.id;
 
   // Start realtime subscription & background cloud sync

@@ -77,12 +77,15 @@ import { findNextAvailableSlot, getSpoonCalibratedDuration } from './utils/smart
 import { getNextFlowTask, isTaskEligibleToday } from './utils/flowPrompt';
 import { isTaskStale, getStaleTasks, getStaleTriageMessage } from './utils/backlogTriage';
 import { DailyShutdownModal } from './components/DailyShutdownModal';
+import { triggerCloudSync } from './clientStore';
+import { CloudSyncStatusDetail } from './cloudSync';
 
 export const App: React.FC = () => {
   const { t, formatDate } = useTranslation();
 
   // Current user state (auto-logs into @testuser for frictionless local testing)
   const [auth, setAuth] = useState<AuthState | null>(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatusDetail>({ status: 'idle' });
 
   // Pomodoro timer visibility
   const [showPomodoro, setShowPomodoro] = useState(true);
@@ -558,15 +561,24 @@ export const App: React.FC = () => {
       }
     };
 
+    const onCloudSyncStatus = (e: Event) => {
+      const detail = (e as CustomEvent<CloudSyncStatusDetail>).detail;
+      if (detail) {
+        setCloudSyncStatus(detail);
+      }
+    };
+
     window.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     window.addEventListener('habitcorp:cloud-sync', onCloudSync);
+    window.addEventListener('habitcorp:cloud-sync-status', onCloudSyncStatus);
 
     return () => {
       clearInterval(timer);
       window.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
       window.removeEventListener('habitcorp:cloud-sync', onCloudSync);
+      window.removeEventListener('habitcorp:cloud-sync-status', onCloudSyncStatus);
     };
   }, [todayStr, auth]);
 
@@ -3090,6 +3102,37 @@ export const App: React.FC = () => {
             title="Scroll projects right"
           >
             <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerCloudSync('user_gabriel', true).then(() => {
+                fetchTasks();
+                fetchProjects();
+                fetchMeetings();
+                fetchGhosts();
+              });
+            }}
+            className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 shrink-0 transition cursor-pointer ${
+              cloudSyncStatus.status === 'syncing'
+                ? 'bg-sky-50 dark:bg-sky-950/60 border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300'
+                : cloudSyncStatus.status === 'synced'
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
+                : cloudSyncStatus.status === 'error'
+                ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                : 'bg-stone-100 dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200'
+            }`}
+            title="Cloud Sync: Tap to push & pull tasks across Computer and Phone"
+          >
+            <span>{cloudSyncStatus.status === 'syncing' ? '🔄' : '☁️'}</span>
+            <span className="hidden sm:inline">
+              {cloudSyncStatus.status === 'syncing'
+                ? 'Syncing...'
+                : cloudSyncStatus.status === 'synced'
+                ? `Synced (${cloudSyncStatus.taskCount ?? tasks.length})`
+                : 'Sync'}
+            </span>
           </button>
         </div>
       </section>

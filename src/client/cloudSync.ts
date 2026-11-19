@@ -13,6 +13,42 @@ import { Task, Project, CalendarMeeting, Ghost, CalendarSource } from './types';
 const DATABASE_ID = 'habitcorp-db';
 export const DELETED_IDS_STORAGE_KEY = 'habitcorp_deleted_ids_v1';
 
+/**
+ * Known demo seed IDs that belong exclusively to `user_test_default`.
+ * Any item in localStorage whose ID is NOT in this set is user-created data
+ * and should be unified under `user_gabriel` for cross-device sync.
+ */
+export const DEMO_SEED_IDS = new Set<string>([
+  'proj_chinese',
+  'proj_japanese',
+  'proj_health',
+  'proj_corp',
+  'proj_unicorn',
+  'proj_family',
+  'ghost_alex',
+  'ghost_sam',
+  'ghost_taylor',
+  'ghost_jordan',
+  'habit_weigh_in',
+  'habit_chinese_anki',
+  'habit_work_kickoff',
+  'habit_deep_work',
+  'habit_japanese_study',
+  'habit_gym_sbs',
+  'habit_evening_close',
+  'task_cmc_review',
+  'task_unicorn_p011',
+  'task_chinese_sentence_mining',
+  'task_unicorn_p012',
+  'habit_job_offers',
+  'task_api_review',
+  'meet_school_run_today',
+  'meet_dog_walk_today',
+  'meet_corp_sync_today',
+  'ghost_alex_pickup_today',
+  'ghost_jordan_circus_today',
+]);
+
 export interface DeletedIdsRegistry {
   deletedTaskIds: string[];
   deletedProjectIds: string[];
@@ -35,11 +71,23 @@ export interface CloudWorkspaceDoc {
   updatedAt: string;
 }
 
+export interface CloudSyncStatusDetail {
+  status: 'idle' | 'syncing' | 'synced' | 'error';
+  taskCount?: number;
+  updatedAt?: string;
+}
+
 let firestoreInstance: Firestore | null = null;
 let firestoreInitPromise: Promise<Firestore | null> | null = null;
 let activeListenerUnsubscribe: Unsubscribe | null = null;
 let activeListenerUserId: string | null = null;
 let syncInProgress = false;
+let pendingSyncArgs: {
+  userId: string;
+  getLocalDbFn: () => any;
+  saveLocalDbFn: (db: any) => void;
+  preferLocalOnTie: boolean;
+} | null = null;
 let lastPushedHash = '';
 
 export function isCloudSyncEnvironment(): boolean {
@@ -172,6 +220,14 @@ function getItemTimestamp(item: any): string {
   );
 }
 
+export function isItemOwnedByCanonicalUser(item: { id: string; user_id?: string }, userId: string): boolean {
+  if (!item || !item.id) return false;
+  if (!item.user_id || item.user_id === userId) return true;
+  // If userId is user_gabriel, claim any user-created item (anything not in DEMO_SEED_IDS)
+  if (userId === 'user_gabriel' && !DEMO_SEED_IDS.has(item.id)) return true;
+  return false;
+}
+
 /**
  * Non-destructively merges local and remote arrays for a given userId,
  * respecting deleted tombstones and picking the newest version of each item.
@@ -184,13 +240,23 @@ export function mergeCollectionById<T extends { id: string; user_id?: string }>(
   preferLocalOnTie: boolean
 ): { mergedAll: T[]; userItems: T[]; changedLocally: boolean; needsCloudPush: boolean } {
   const otherUsersItems = (localAll || []).filter(
-    (item) => item.user_id && item.user_id !== userId
+    (item) => !isItemOwnedByCanonicalUser(item, userId)
   );
   const localUserItems = (localAll || []).filter(
-    (item) => (!item.user_id || item.user_id === userId) && !deletedIdsSet.has(item.id)
+    (item) => isItemOwnedByCanonicalUser(item, userId) && !deletedIdsSet.has(item.id)
   );
   const validRemoteItems = (remoteUserItems || []).filter(
     (item) => item && item.id && !deletedIdsSet.has(item.id)
+  );
+
+  // Check if any local item had a non-canonical user_id that is being unified
+  let changedLocally = (localAll || []).some(
+    (item) =>
+      isItemOwnedByCanonicalUser(item, userId) &&
+      (deletedIdsSet.has(item.id) || item.user_id !== userId)
+  );
+  let needsCloudPush = (remoteUserItems || []).some(
+    (item) => item && deletedIdsSet.has(item.id)
   );
 
   const localMap = new Map<string, T>();
@@ -202,13 +268,6 @@ export function mergeCollectionById<T extends { id: string; user_id?: string }>(
   for (const item of validRemoteItems) {
     remoteMap.set(item.id, { ...item, user_id: userId });
   }
-
-  let changedLocally = (localAll || []).some(
-    (item) => (!item.user_id || item.user_id === userId) && deletedIdsSet.has(item.id)
-  );
-  let needsCloudPush = (remoteUserItems || []).some(
-    (item) => item && deletedIdsSet.has(item.id)
-  );
 
   const mergedUserMap = new Map<string, T>();
 
@@ -262,19 +321,50 @@ function notifyCloudSyncUpdated() {
   }
 }
 
+function notifyCloudSyncStatus(detail: CloudSyncStatusDetail) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('habitcorp:cloud-sync-status', { detail }));
+  }
+}
+
 export async function syncClientDbWithCloud(
   userId: string = 'user_gabriel',
   getLocalDbFn: () => any,
   saveLocalDbFn: (db: any) => void,
-  preferLocalOnTie: boolean = true
+  preferLocalOnTie: boolean = true,
+  forcePush: boolean = false
 ): Promise<boolean> {
+  // Always canonicalize cloud workspace to user_gabriel so desktop and mobile always meet on the same document
+  const canonicalUserId = 'user_gabriel';
+
+  if (syncInProgress) {
+    pendingSyncArgs = {
+      userId: canonicalUserId,
+      getLocalDbFn,
+      saveLocalDbFn,
+      preferLocalOnTie: (pendingSyncArgs?.preferLocalOnTie ?? false) || preferLocalOnTie,
+    };
+    return false;
+  }
+
   const firestore = await getFirestoreDb();
-  if (!firestore || !userId || syncInProgress) return false;
-  if (!/^[a-zA-Z0-9_-]{3,64}$/.test(userId)) return false;
+  if (!firestore) return false;
+
+  if (syncInProgress) {
+    pendingSyncArgs = {
+      userId: canonicalUserId,
+      getLocalDbFn,
+      saveLocalDbFn,
+      preferLocalOnTie: (pendingSyncArgs?.preferLocalOnTie ?? false) || preferLocalOnTie,
+    };
+    return false;
+  }
 
   syncInProgress = true;
+  notifyCloudSyncStatus({ status: 'syncing' });
+
   try {
-    const wsRef = doc(firestore, 'workspaces', userId);
+    const wsRef = doc(firestore, 'workspaces', canonicalUserId);
     const snap = await getDoc(wsRef);
     const localDb = getLocalDbFn();
     const localDeleted = getDeletedIdsRegistry();
@@ -307,35 +397,35 @@ export async function syncClientDbWithCloud(
     const projMerge = mergeCollectionById<Project>(
       localDb.projects || [],
       remoteData.projects || [],
-      userId,
+      canonicalUserId,
       deletedProjectsSet,
       preferLocalOnTie
     );
     const taskMerge = mergeCollectionById<Task>(
       localDb.tasks || [],
       remoteData.tasks || [],
-      userId,
+      canonicalUserId,
       deletedTasksSet,
       preferLocalOnTie
     );
     const meetMerge = mergeCollectionById<CalendarMeeting>(
       localDb.meetings || [],
       remoteData.meetings || [],
-      userId,
+      canonicalUserId,
       deletedMeetingsSet,
       preferLocalOnTie
     );
     const ghostMerge = mergeCollectionById<Ghost>(
       localDb.ghosts || [],
       remoteData.ghosts || [],
-      userId,
+      canonicalUserId,
       deletedGhostsSet,
       preferLocalOnTie
     );
     const calMerge = mergeCollectionById<CalendarSource>(
       localDb.calendars || [],
       remoteData.calendars || [],
-      userId,
+      canonicalUserId,
       new Set(),
       preferLocalOnTie
     );
@@ -357,17 +447,25 @@ export async function syncClientDbWithCloud(
       notifyCloudSyncUpdated();
     }
 
+    const remoteTasksLen = Array.isArray(remoteData.tasks) ? remoteData.tasks.length : 0;
+    const remoteProjsLen = Array.isArray(remoteData.projects) ? remoteData.projects.length : 0;
+
     const shouldPush =
+      forcePush ||
       !snap.exists() ||
+      (taskMerge.userItems.length > remoteTasksLen) ||
+      (projMerge.userItems.length > remoteProjsLen) ||
       projMerge.needsCloudPush ||
       taskMerge.needsCloudPush ||
       meetMerge.needsCloudPush ||
       ghostMerge.needsCloudPush ||
       calMerge.needsCloudPush;
 
+    const nowIso = new Date().toISOString();
+
     if (shouldPush) {
       const payload: CloudWorkspaceDoc = sanitizeForFirestore({
-        userId,
+        userId: canonicalUserId,
         projects: projMerge.userItems.slice(0, 500),
         tasks: taskMerge.userItems.slice(0, 5000),
         subtasks: (localDb.subtasks || []).slice(0, 10000),
@@ -378,27 +476,44 @@ export async function syncClientDbWithCloud(
         deletedProjectIds: mergedDeleted.deletedProjectIds.slice(-400),
         deletedMeetingIds: mergedDeleted.deletedMeetingIds.slice(-4000),
         deletedGhostIds: mergedDeleted.deletedGhostIds.slice(-150),
-        updatedAt: new Date().toISOString(),
+        updatedAt: nowIso,
       });
       const payloadHash = JSON.stringify({
-        p: payload.projects.length,
+        p: payload.projects,
         t: payload.tasks,
-        m: payload.meetings.length,
-        g: payload.ghosts.length,
+        m: payload.meetings,
+        g: payload.ghosts,
         dt: payload.deletedTaskIds.length,
       });
-      if (payloadHash !== lastPushedHash) {
+      if (forcePush || payloadHash !== lastPushedHash) {
         lastPushedHash = payloadHash;
         await setDoc(wsRef, payload);
       }
     }
 
+    notifyCloudSyncStatus({
+      status: 'synced',
+      taskCount: taskMerge.userItems.length,
+      updatedAt: remoteData.updatedAt || nowIso,
+    });
+
     return anyChangedLocally;
   } catch (err) {
     console.warn('Cloud sync warning (continuing with local storage):', err);
+    notifyCloudSyncStatus({ status: 'error' });
     return false;
   } finally {
     syncInProgress = false;
+    if (pendingSyncArgs) {
+      const next = pendingSyncArgs;
+      pendingSyncArgs = null;
+      syncClientDbWithCloud(
+        next.userId,
+        next.getLocalDbFn,
+        next.saveLocalDbFn,
+        next.preferLocalOnTie
+      ).catch(() => {});
+    }
   }
 }
 
@@ -407,25 +522,26 @@ export function startRealtimeCloudSubscription(
   getLocalDbFn: () => any,
   saveLocalDbFn: (db: any) => void
 ) {
-  if (!isCloudSyncEnvironment() || !userId) return;
-  if (activeListenerUserId === userId && activeListenerUnsubscribe) return;
+  const canonicalUserId = 'user_gabriel';
+  if (!isCloudSyncEnvironment()) return;
+  if (activeListenerUserId === canonicalUserId && activeListenerUnsubscribe) return;
 
-  activeListenerUserId = userId;
+  activeListenerUserId = canonicalUserId;
 
   getFirestoreDb()
     .then((firestore) => {
-      if (!firestore || activeListenerUserId !== userId) return;
+      if (!firestore || activeListenerUserId !== canonicalUserId) return;
       if (activeListenerUnsubscribe) {
         activeListenerUnsubscribe();
         activeListenerUnsubscribe = null;
       }
 
-      const wsRef = doc(firestore, 'workspaces', userId);
+      const wsRef = doc(firestore, 'workspaces', canonicalUserId);
       activeListenerUnsubscribe = onSnapshot(
         wsRef,
         (snap) => {
           if (!snap.exists() || syncInProgress) return;
-          syncClientDbWithCloud(userId, getLocalDbFn, saveLocalDbFn, false).catch(() => {});
+          syncClientDbWithCloud(canonicalUserId, getLocalDbFn, saveLocalDbFn, false).catch(() => {});
         },
         (err) => {
           console.warn('Firestore realtime subscription warning:', err);
